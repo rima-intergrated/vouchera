@@ -1,0 +1,360 @@
+import { useState } from 'react';
+import { useAnalytics, useRedemptions, downloadCsv } from '../hooks/useReports.js';
+import { useLookup } from '../hooks/useVouchers.js';
+import { useAuth } from '../context/AuthContext.jsx';
+import { formatMWK } from '../utils/format.js';
+
+const TABS = [
+  { id: 'redemption', label: 'Redemption' },
+  { id: 'issuance', label: 'Issuance' },
+  { id: 'liability', label: 'Liability' },
+  { id: 'expired', label: 'Expired' },
+  { id: 'by-store', label: 'By Store' },
+  { id: 'by-cashier', label: 'By Cashier' },
+  { id: 'campaigns', label: 'Campaigns' },
+  { id: 'daily', label: 'Daily' },
+  { id: 'monthly', label: 'Monthly' },
+  { id: 'reconciliation', label: 'Reconciliation' },
+];
+
+const NO_DATES = new Set(['liability']);
+
+function DataTable({ columns, rows, emptyText }) {
+  if (!rows?.length) return <p className="muted">{emptyText ?? 'No data in the selected period.'}</p>;
+  return (
+    <table className="table">
+      <thead>
+        <tr>{columns.map((c) => <th key={c.key}>{c.label}</th>)}</tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i}>
+            {columns.map((c) => (
+              <td key={c.key}>{c.money ? formatMWK(r[c.key]) : String(r[c.key] ?? '—')}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function Totals({ items }) {
+  return (
+    <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+      {items.map((t) => (
+        <div className="stat-card" key={t.label}>
+          <div className="stat-label">{t.label}</div>
+          <div className="stat-value" style={{ fontSize: 22 }}>{t.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AnalyticsTab({ endpoint, params, csvName, children }) {
+  const { data, loading, error, retry } = useAnalytics(endpoint, params);
+  const [exporting, setExporting] = useState(false);
+
+  const onExport = async () => {
+    setExporting(true);
+    try {
+      await downloadCsv(endpoint, params, csvName);
+    } catch {
+      // eslint-disable-next-line no-alert
+      alert('CSV export failed. Try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  if (loading) return <div className="card"><p className="muted">Loading report…</p></div>;
+  if (error) {
+    return (
+      <div className="card error-state">
+        <p className="error">Could not load report: {error}</p>
+        <button className="btn" onClick={retry}>Retry</button>
+      </div>
+    );
+  }
+  return (
+    <>
+      {children(data)}
+      <div style={{ marginTop: 12 }}>
+        <button className="btn secondary" onClick={onExport} disabled={exporting}>
+          {exporting ? 'Exporting…' : 'Export CSV'}
+        </button>
+      </div>
+    </>
+  );
+}
+
+export default function Reports() {
+  const { user } = useAuth();
+  const { stores, campaigns } = useLookup();
+  const [tab, setTab] = useState('redemption');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [store, setStore] = useState('');
+  const [campaign, setCampaign] = useState('');
+  const [applied, setApplied] = useState({ from: '', to: '', store: '', campaign: '' });
+
+  const apply = (e) => {
+    e.preventDefault();
+    setApplied({ from, to, store, campaign });
+  };
+
+  const showDates = !NO_DATES.has(tab);
+  const showStore = ['issuance', 'by-store', 'by-cashier'].includes(tab) && user?.role !== 'MANAGER';
+  const showCampaign = tab === 'issuance';
+
+  return (
+    <div className="container wide">
+      <div className="page-head"><h1>Reports</h1></div>
+      <div className="tabs">
+        {TABS.map((t) => (
+          <button key={t.id} className={tab === t.id ? 'tab active' : 'tab'} onClick={() => setTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <form className="card filters-bar" onSubmit={apply}>
+        {showDates && (
+          <>
+            <input type="date" className="input" value={from} onChange={(e) => setFrom(e.target.value)} title="From" />
+            <input type="date" className="input" value={to} onChange={(e) => setTo(e.target.value)} title="To" />
+          </>
+        )}
+        {showStore && (
+          <select className="select" value={store} onChange={(e) => setStore(e.target.value)}>
+            <option value="">All stores</option>
+            {stores.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+          </select>
+        )}
+        {showCampaign && (
+          <select className="select" value={campaign} onChange={(e) => setCampaign(e.target.value)}>
+            <option value="">All campaigns</option>
+            {campaigns.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
+          </select>
+        )}
+        <button className="btn" type="submit">Apply</button>
+      </form>
+
+      {tab === 'redemption' && <RedemptionTab applied={applied} />}
+      {tab === 'issuance' && (
+        <AnalyticsTab endpoint="issuance" params={applied} csvName="voucher-issuance.csv">
+          {(d) => (
+            <>
+              <Totals items={[
+                { label: 'Vouchers Issued', value: d.totals.count },
+                { label: 'Value Issued', value: formatMWK(d.totals.value) },
+              ]} />
+              <div className="card">
+                <h2>Issuance by Day</h2>
+                <DataTable
+                  columns={[{ key: 'date', label: 'Date' }, { key: 'issued', label: 'Issued' }, { key: 'value', label: 'Value', money: true }]}
+                  rows={d.byDay}
+                />
+              </div>
+            </>
+          )}
+        </AnalyticsTab>
+      )}
+      {tab === 'liability' && (
+        <AnalyticsTab endpoint="liability" params={{ campaign: applied.campaign }} csvName="outstanding-liability.csv">
+          {(d) => (
+            <>
+              <Totals items={[
+                { label: 'Outstanding Vouchers', value: d.totals.count },
+                { label: 'Outstanding Liability', value: formatMWK(d.totals.outstanding) },
+                { label: 'Expiring in 30 Days', value: `${d.expiring30Days.count} (${formatMWK(d.expiring30Days.outstanding)})` },
+              ]} />
+              <div className="card">
+                <h2>Liability by Campaign</h2>
+                <DataTable
+                  columns={[{ key: 'campaign', label: 'Campaign' }, { key: 'vouchers', label: 'Vouchers' }, { key: 'outstanding', label: 'Outstanding', money: true }]}
+                  rows={d.byCampaign}
+                />
+              </div>
+            </>
+          )}
+        </AnalyticsTab>
+      )}
+      {tab === 'expired' && (
+        <AnalyticsTab endpoint="expired" params={applied} csvName="expired-vouchers.csv">
+          {(d) => (
+            <>
+              <Totals items={[
+                { label: 'Expired Vouchers', value: d.totals.count },
+                { label: 'Written-Off Value', value: formatMWK(d.totals.lostValue) },
+              ]} />
+              <div className="card">
+                <h2>Expired Vouchers</h2>
+                <DataTable
+                  columns={[{ key: 'code', label: 'Code' }, { key: 'originalValue', label: 'Original', money: true }, { key: 'lostValue', label: 'Written Off', money: true }, { key: 'expiryDate', label: 'Expiry' }, { key: 'customer', label: 'Customer' }]}
+                  rows={d.items}
+                />
+              </div>
+            </>
+          )}
+        </AnalyticsTab>
+      )}
+      {tab === 'by-store' && (
+        <AnalyticsTab endpoint="by-store" params={applied} csvName="redemption-by-store.csv">
+          {(d) => (
+            <div className="card">
+              <h2>Redemption by Store</h2>
+              <DataTable
+                columns={[{ key: 'store', label: 'Store' }, { key: 'redemptions', label: 'Redemptions' }, { key: 'value', label: 'Value', money: true }, { key: 'uniqueVouchers', label: 'Vouchers' }, { key: 'avgTicket', label: 'Avg Ticket', money: true }]}
+                rows={d.rows}
+              />
+            </div>
+          )}
+        </AnalyticsTab>
+      )}
+      {tab === 'by-cashier' && (
+        <AnalyticsTab endpoint="by-cashier" params={applied} csvName="redemption-by-cashier.csv">
+          {(d) => (
+            <div className="card">
+              <h2>Redemption by Cashier</h2>
+              <DataTable
+                columns={[{ key: 'cashier', label: 'Cashier' }, { key: 'email', label: 'Email' }, { key: 'store', label: 'Store' }, { key: 'redemptions', label: 'Redemptions' }, { key: 'value', label: 'Value', money: true }]}
+                rows={d.rows}
+              />
+            </div>
+          )}
+        </AnalyticsTab>
+      )}
+      {tab === 'campaigns' && (
+        <AnalyticsTab endpoint="campaigns" params={applied} csvName="campaign-performance.csv">
+          {(d) => (
+            <div className="card">
+              <h2>Campaign Performance</h2>
+              <DataTable
+                columns={[{ key: 'campaign', label: 'Campaign' }, { key: 'issued', label: 'Issued' }, { key: 'issuedValue', label: 'Issued Value', money: true }, { key: 'redemptions', label: 'Redemptions' }, { key: 'redeemedValue', label: 'Redeemed', money: true }, { key: 'outstanding', label: 'Outstanding', money: true }, { key: 'redemptionRate', label: 'Rate %' }]}
+                rows={d.rows.map((r) => ({ ...r, redemptionRate: `${r.redemptionRate}%` }))}
+              />
+            </div>
+          )}
+        </AnalyticsTab>
+      )}
+      {tab === 'daily' && (
+        <AnalyticsTab endpoint="daily" params={applied} csvName="daily-redemptions.csv">
+          {(d) => (
+            <div className="card">
+              <h2>Daily Redemption Summary</h2>
+              <DataTable
+                columns={[{ key: 'period', label: 'Date' }, { key: 'redemptions', label: 'Redemptions' }, { key: 'redeemedValue', label: 'Redeemed', money: true }, { key: 'issued', label: 'Issued' }, { key: 'issuedValue', label: 'Issued Value', money: true }]}
+                rows={d.rows}
+              />
+            </div>
+          )}
+        </AnalyticsTab>
+      )}
+      {tab === 'monthly' && (
+        <AnalyticsTab endpoint="monthly" params={applied} csvName="monthly-redemptions.csv">
+          {(d) => (
+            <div className="card">
+              <h2>Monthly Redemption Summary</h2>
+              <DataTable
+                columns={[{ key: 'period', label: 'Month' }, { key: 'redemptions', label: 'Redemptions' }, { key: 'redeemedValue', label: 'Redeemed', money: true }, { key: 'issued', label: 'Issued' }, { key: 'issuedValue', label: 'Issued Value', money: true }]}
+                rows={d.rows}
+              />
+            </div>
+          )}
+        </AnalyticsTab>
+      )}
+      {tab === 'reconciliation' && (
+        <AnalyticsTab endpoint="reconciliation" params={{}} csvName="reconciliation.csv">
+          {(d) => (
+            <>
+              <Totals items={[
+                { label: 'Money In', value: formatMWK(d.totals.inTotal) },
+                { label: 'Money Out + Written Off', value: formatMWK(d.totals.outTotal) },
+                { label: 'Outstanding', value: formatMWK(d.totals.outstandingTotal) },
+                { label: 'DRIFT (must be 0)', value: formatMWK(d.totals.drift) },
+              ]} />
+              <div className="card">
+                <h2>Reconciliation</h2>
+                <DataTable
+                  columns={[{ key: 'label', label: 'Item' }, { key: 'value', label: 'Value', money: true }]}
+                  rows={[
+                    { label: 'Voucher issued', value: d.inflows.voucherIssued },
+                    { label: 'Wallet top-ups', value: d.inflows.walletTopups },
+                    { label: 'Gift card reloads', value: d.inflows.giftReloads },
+                    { label: 'Voucher redeemed', value: d.outflows.voucherRedeemed },
+                    { label: 'Wallet debits', value: d.outflows.walletDebits },
+                    { label: 'Expired written off', value: d.outflows.expiredWrittenOff },
+                    { label: 'Cancelled forfeited', value: d.outflows.cancelledForfeited },
+                    { label: 'Outstanding (vouchers)', value: d.outstanding.vouchers },
+                    { label: 'Outstanding (wallets)', value: d.outstanding.wallets },
+                  ]}
+                />
+                {d.totals.drift !== 0 && (
+                  <p className="error">Non-zero drift — money moved outside the ledger. Investigate immediately.</p>
+                )}
+              </div>
+            </>
+          )}
+        </AnalyticsTab>
+      )}
+    </div>
+  );
+}
+
+function RedemptionTab({ applied }) {
+  const [page, setPage] = useState(1);
+  const { data, loading, error, retry } = useRedemptions({ ...applied, page, limit: 20 });
+
+  if (loading) return <div className="card"><p className="muted">Loading report…</p></div>;
+  if (error) {
+    return (
+      <div className="card error-state">
+        <p className="error">Could not load report: {error}</p>
+        <button className="btn" onClick={retry}>Retry</button>
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="card">
+        <h2>Activity by Store</h2>
+        <DataTable
+          columns={[{ key: 'name', label: 'Store' }, { key: 'redemptions', label: 'Redemptions' }, { key: 'value', label: 'Value', money: true }]}
+          rows={data.activityByStore.map((r) => ({ name: r.store.name, redemptions: r.redemptions, value: r.value }))}
+        />
+      </div>
+      <div className="card">
+        <h2>Redemptions ({data.pagination.total})</h2>
+        {data.items.length === 0 ? (
+          <p className="muted">No redemptions in the selected period.</p>
+        ) : (
+          <>
+            <table className="table">
+              <thead>
+                <tr><th>Reference</th><th>Voucher/Wallet</th><th>Amount</th><th>Store</th><th>Date</th></tr>
+              </thead>
+              <tbody>
+                {data.items.map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.redemptionReference}</td>
+                    <td>{r.voucherCode ?? r.walletCode ?? '—'}</td>
+                    <td>{formatMWK(r.amountRedeemed)}</td>
+                    <td>{r.store?.name ?? '—'}</td>
+                    <td>{new Date(r.redeemedAt).toLocaleString('en-GB')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="pagination">
+              <button className="btn secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</button>
+              <span className="muted">Page {data.pagination.page} of {Math.max(1, data.pagination.pages)}</span>
+              <button className="btn secondary" disabled={page >= data.pagination.pages} onClick={() => setPage((p) => p + 1)}>Next</button>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
