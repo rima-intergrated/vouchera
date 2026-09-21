@@ -58,16 +58,12 @@ export default function CashierScan() {
             if (doneRef.current) return;
             doneRef.current = true;
             const code = extractCode(decoded);
-            // Fully shut the camera down BEFORE navigating: leaving while a
-            // scan is ongoing makes clear() throw and blanks the whole app.
-            (async () => {
-              try { await scanner.stop(); } catch { /* already stopped */ }
-              try { await scanner.clear(); } catch { /* already cleared */ }
-              scannerRef.current = null;
-            })().finally(() => {
-              if (code) navigate(`/cashier/voucher/${encodeURIComponent(code)}`, { replace: true });
-              else navigate('/cashier', { replace: true });
-            });
+            // Navigate immediately — camera shutdown continues in the unmount
+            // cleanup below. Awaiting stop() here hangs on some mobile
+            // browsers (stop() never settles) and strands the till on the
+            // scan page even though the code was read successfully.
+            if (code) navigate(`/cashier/voucher/${encodeURIComponent(code)}`, { replace: true });
+            else navigate('/cashier', { replace: true });
           },
           () => {} // per-frame misses are normal; stay silent
         );
@@ -93,15 +89,19 @@ export default function CashierScan() {
     return () => {
       cancelled = true;
       doneRef.current = true;
-      // Await stop() before clear(): clear() throws synchronously
+      // Sequential stop() then clear(): clear() throws synchronously
       // ("Cannot clear while scan is ongoing") if the camera is still
       // running, and that throw unmounts the app to a white page.
+      // Each step is time-boxed — stop() never settles on some mobile
+      // browsers, and that must not wedge the shutdown (or navigation).
       const scanner = scannerRef.current;
       scannerRef.current = null;
       if (scanner) {
+        const withTimeout = (promise, ms) =>
+          Promise.race([promise, new Promise((resolve) => setTimeout(resolve, ms))]);
         (async () => {
-          try { await scanner.stop(); } catch { /* already stopped */ }
-          try { await scanner.clear(); } catch { /* already cleared */ }
+          try { await withTimeout(scanner.stop(), 3000); } catch { /* already stopped */ }
+          try { await withTimeout(scanner.clear(), 3000); } catch { /* already cleared */ }
         })();
       }
     };
