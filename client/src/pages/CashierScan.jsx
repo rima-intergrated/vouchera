@@ -58,7 +58,13 @@ export default function CashierScan() {
             if (doneRef.current) return;
             doneRef.current = true;
             const code = extractCode(decoded);
-            scanner.stop().catch(() => {}).finally(() => {
+            // Fully shut the camera down BEFORE navigating: leaving while a
+            // scan is ongoing makes clear() throw and blanks the whole app.
+            (async () => {
+              try { await scanner.stop(); } catch { /* already stopped */ }
+              try { await scanner.clear(); } catch { /* already cleared */ }
+              scannerRef.current = null;
+            })().finally(() => {
               if (code) navigate(`/cashier/voucher/${encodeURIComponent(code)}`, { replace: true });
               else navigate('/cashier', { replace: true });
             });
@@ -87,8 +93,17 @@ export default function CashierScan() {
     return () => {
       cancelled = true;
       doneRef.current = true;
-      scannerRef.current?.stop().catch(() => {});
-      scannerRef.current?.clear().catch(() => {});
+      // Await stop() before clear(): clear() throws synchronously
+      // ("Cannot clear while scan is ongoing") if the camera is still
+      // running, and that throw unmounts the app to a white page.
+      const scanner = scannerRef.current;
+      scannerRef.current = null;
+      if (scanner) {
+        (async () => {
+          try { await scanner.stop(); } catch { /* already stopped */ }
+          try { await scanner.clear(); } catch { /* already cleared */ }
+        })();
+      }
     };
   }, [navigate]);
 
