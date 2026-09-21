@@ -3,5 +3,6 @@
   "framework": "vite",
   "installCommand": "npm install --prefix client",
   "buildCommand": "npm run build --prefix client",
-  "outputDirectory": "client/dist"
+  "outputDirectory": "client/dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
