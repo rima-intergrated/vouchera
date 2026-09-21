@@ -1,5 +1,7 @@
 import Voucher from '../models/Voucher.js';
 import VoucherRedemption from '../models/VoucherRedemption.js';
+import Customer from '../models/Customer.js';
+import WalletTransaction from '../models/WalletTransaction.js';
 import Store from '../models/Store.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
@@ -35,6 +37,10 @@ export const getSummary = asyncHandler(async (req, res) => {
     todayStats,
     storeActivity,
     recent,
+    walletStats,
+    topUpStats,
+    giftCardStats,
+    giftCardOutstanding,
   ] = await Promise.all([
     Voucher.countDocuments(),
     Voucher.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
@@ -65,6 +71,38 @@ export const getSummary = asyncHandler(async (req, res) => {
       .sort({ redeemedAt: -1 })
       .limit(10)
       .lean(),
+    // Stored-value wallets: issued codes, funded count, balance held.
+    Customer.aggregate([
+      { $match: { walletCode: { $type: 'string' } } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          funded: { $sum: { $cond: [{ $gt: ['$walletBalance', 0] }, 1, 0] } },
+          totalBalance: { $sum: '$walletBalance' },
+        },
+      },
+    ]),
+    // All-time wallet top-ups (money loaded onto wallets).
+    WalletTransaction.aggregate([
+      { $match: { type: 'TOP_UP' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+    // Gift cards are vouchers too — broken out for the stored-value view.
+    Voucher.aggregate([
+      { $match: { type: 'GIFT_CARD', status: { $ne: 'DRAFT' } } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          issued: { $sum: '$originalValue' },
+        },
+      },
+    ]),
+    Voucher.aggregate([
+      { $match: { type: 'GIFT_CARD', status: { $in: ['ACTIVE', 'PARTIALLY_REDEEMED'] } } },
+      { $group: { _id: null, outstanding: { $sum: '$remainingBalance' } } },
+    ]),
   ]);
 
   const byStatus = {};
@@ -92,6 +130,17 @@ export const getSummary = asyncHandler(async (req, res) => {
       totalIssued: valueStats[0]?.issued ?? 0,
       totalRedeemed: redemptionStats[0]?.value ?? 0,
       outstanding: outstandingStats[0]?.outstanding ?? 0,
+    },
+    wallets: {
+      total: walletStats[0]?.total ?? 0,
+      funded: walletStats[0]?.funded ?? 0,
+      totalBalance: walletStats[0]?.totalBalance ?? 0,
+      totalToppedUp: topUpStats[0]?.total ?? 0,
+    },
+    giftCards: {
+      total: giftCardStats[0]?.total ?? 0,
+      issued: giftCardStats[0]?.issued ?? 0,
+      outstanding: giftCardOutstanding[0]?.outstanding ?? 0,
     },
     redemptions: {
       count: redemptionStats[0]?.count ?? 0,

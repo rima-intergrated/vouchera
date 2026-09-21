@@ -12,12 +12,12 @@ function formatDateTime(value) {
   });
 }
 
-function StatCard({ label, value, sub }) {
+function StatCard({ label, value, sub, hero }) {
   return (
-    <div className="stat-card">
+    <div className={`stat-card${hero ? ' hero' : ''}`}>
       <div className="stat-label">{label}</div>
       <div className="stat-value">{value}</div>
-      {sub && <div className="muted small">{sub}</div>}
+      {sub && <div className={hero ? 'hero-sub small' : 'muted small'}>{sub}</div>}
     </div>
   );
 }
@@ -25,10 +25,48 @@ function StatCard({ label, value, sub }) {
 function SkeletonCards() {
   return (
     <div className="stat-grid">
-      {Array.from({ length: 8 }).map((_, i) => (
+      {Array.from({ length: 12 }).map((_, i) => (
         <div key={i} className="stat-card skeleton">Loading…</div>
       ))}
     </div>
+  );
+}
+
+// Stored-value overview: customer wallets + gift cards. Defensive defaults
+// keep the section rendering while an older API without these fields rolls.
+function WalletSection({ data }) {
+  const wallets = data.wallets ?? { total: 0, funded: 0, totalBalance: 0, totalToppedUp: 0 };
+  const giftCards = data.giftCards ?? { total: 0, issued: 0, outstanding: 0 };
+  const voucherOutstanding = data.values?.outstanding ?? 0;
+  const liability = voucherOutstanding + wallets.totalBalance;
+
+  return (
+    <>
+      <h2 className="section-title">Wallets &amp; Gift Cards</h2>
+      <div className="stat-grid">
+        <StatCard
+          hero
+          label="Total Stored-Value Liability"
+          value={formatMWK(liability)}
+          sub={`Vouchers ${formatMWK(voucherOutstanding)} · Wallets ${formatMWK(wallets.totalBalance)}`}
+        />
+        <StatCard
+          label="Wallet Balance Held"
+          value={formatMWK(wallets.totalBalance)}
+          sub={`${wallets.funded} funded of ${wallets.total} wallets`}
+        />
+        <StatCard
+          label="Gift Cards Outstanding"
+          value={formatMWK(giftCards.outstanding)}
+          sub={`${giftCards.total} cards · ${formatMWK(giftCards.issued)} issued`}
+        />
+        <StatCard
+          label="Total Wallet Top-Ups"
+          value={formatMWK(wallets.totalToppedUp)}
+          sub="All-time loads"
+        />
+      </div>
+    </>
   );
 }
 
@@ -71,6 +109,7 @@ export default function Dashboard() {
 
       {!loading && !error && data && (
         <>
+          <h2 className="section-title">Vouchers</h2>
           <div className="stat-grid">
             <StatCard label="Total Vouchers" value={data.vouchers.total} />
             <StatCard label="Active Vouchers" value={data.vouchers.active} />
@@ -85,6 +124,8 @@ export default function Dashboard() {
               sub={formatMWK(data.redemptions.today.value)}
             />
           </div>
+
+          <WalletSection data={data} />
 
           <div className="grid-2">
             <div className="card">

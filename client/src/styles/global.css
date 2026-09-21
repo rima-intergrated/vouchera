@@ -149,6 +149,12 @@ body {
 .stat-card { background: var(--card); border-radius: var(--radius); padding: 16px; box-shadow: 0 1px 4px rgba(127, 29, 29, 0.08); }
 .stat-label { font-size: 13px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .stat-value { font-size: 28px; font-weight: 800; color: var(--navy); margin-top: 4px; }
+.section-title { font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 24px 0 12px; }
+.page-head + .section-title { margin-top: 0; }
+.stat-card.hero { background: var(--navy); border: 1px solid var(--navy); }
+.stat-card.hero .stat-label { color: #e8b4b4; }
+.stat-card.hero .stat-value { color: #fff; }
+.stat-card.hero .hero-sub { color: #f3d9d9; }
 .skeleton { color: transparent; background: linear-gradient(90deg, #eedddd 25%, #f8eeee 50%, #eedddd 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
