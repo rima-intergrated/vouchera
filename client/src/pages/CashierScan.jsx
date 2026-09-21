@@ -2,6 +2,26 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
 
+// QR payloads are raw codes (WC-XXXX, SW-XXXXXXXX), but tolerate full
+// URLs too (e.g. https://.../cashier/voucher/WC-XXXX or ?code=WC-XXXX)
+// so a reprinted/shared QR never dead-ends the till on a 404.
+function extractCode(decoded) {
+  const raw = String(decoded || '').trim();
+  if (!raw) return '';
+  try {
+    if (/^https?:\/\//i.test(raw)) {
+      const url = new URL(raw);
+      const param = url.searchParams.get('code');
+      if (param) return param.trim().toUpperCase();
+      const segments = url.pathname.split('/').filter(Boolean);
+      if (segments.length) return segments[segments.length - 1].toUpperCase();
+    }
+  } catch {
+    // Not a parseable URL — fall through to raw-code handling.
+  }
+  return raw.toUpperCase();
+}
+
 // Camera scanner: requests permission, shows preview, stops on first
 // detection and hands the decoded code to the validation page.
 // Scanning NEVER redeems — it only reads the code.
@@ -37,7 +57,7 @@ export default function CashierScan() {
           (decoded) => {
             if (doneRef.current) return;
             doneRef.current = true;
-            const code = String(decoded || '').trim().toUpperCase();
+            const code = extractCode(decoded);
             scanner.stop().catch(() => {}).finally(() => {
               if (code) navigate(`/cashier/voucher/${encodeURIComponent(code)}`, { replace: true });
               else navigate('/cashier', { replace: true });

@@ -18,6 +18,10 @@ import { errorHandler, notFound } from './middleware/errorHandler.js';
 
 const app = express();
 
+// Behind Render's reverse proxy (TLS termination + X-Forwarded-For).
+// Trust a single proxy hop so rate limiting sees real client IPs.
+app.set('trust proxy', 1);
+
 // Secure HTTP headers
 app.use(helmet());
 
