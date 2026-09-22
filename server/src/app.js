@@ -27,6 +27,19 @@ app.set('trust proxy', 1);
 // Secure HTTP headers
 app.use(helmet());
 
+// Production HTTPS enforcement: sessions and PINs must never cross the wire
+// in cleartext. Behind Render/Heroku-style TLS termination the proxy sets
+// X-Forwarded-Proto, which trust-proxy (set above) exposes via req.secure.
+if (env.nodeEnv === 'production') {
+  app.use((req, res, next) => {
+    const proto = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+    if (proto !== 'https') {
+      return res.redirect(301, `https://${req.headers.host}${req.originalUrl}`);
+    }
+    next();
+  });
+}
+
 // CORS — restrict to configured frontend origin
 app.use(
   cors({

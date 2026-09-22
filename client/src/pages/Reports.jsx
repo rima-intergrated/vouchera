@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAnalytics, useRedemptions, downloadCsv } from '../hooks/useReports.js';
 import { useLookup } from '../hooks/useVouchers.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import api from '../services/api.js';
 import { formatMWK } from '../utils/format.js';
 
 const TABS = [
@@ -15,9 +16,10 @@ const TABS = [
   { id: 'daily', label: 'Daily' },
   { id: 'monthly', label: 'Monthly' },
   { id: 'reconciliation', label: 'Reconciliation' },
+  { id: 'anomalies', label: 'Anomalies' },
 ];
 
-const NO_DATES = new Set(['liability']);
+const NO_DATES = new Set(['liability', 'anomalies']);
 
 function DataTable({ columns, rows, emptyText }) {
   if (!rows?.length) return <p className="muted">{emptyText ?? 'No data in the selected period.'}</p>;
@@ -299,7 +301,90 @@ export default function Reports() {
           )}
         </AnalyticsTab>
       )}
+      {tab === 'anomalies' && <AnomaliesTab />}
     </div>
+  );
+}
+
+// Fraud tripwire: today's top-ups per staff member vs their trailing average.
+// Flags spikes (3× baseline above the noise floor) and singles at/above the
+// approval threshold. Check daily — every view is audit-logged server-side.
+function AnomaliesTab() {
+  const [days, setDays] = useState(30);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.get(`/reports/topup-anomalies?days=${days}`);
+      setData(data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load anomaly report');
+    } finally {
+      setLoading(false);
+    }
+  }, [days]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading) return <div className="card"><p className="muted">Checking top-up patterns…</p></div>;
+  if (error) {
+    return (
+      <div className="card error-state">
+        <p className="error">{error}</p>
+        <button className="btn" onClick={load}>Retry</button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Totals items={[
+        { label: 'Staff Checked', value: data.items.length },
+        { label: 'Flagged', value: data.flagged },
+        { label: 'Baseline Window', value: `${data.windowDays} days` },
+      ]} />
+      {data.flagged > 0 && (
+        <div className="card error-state">
+          <p className="error">{data.flagged} staff member{data.flagged === 1 ? '' : 's'} flagged — review their top-ups and proof attachments before more credits.</p>
+        </div>
+      )}
+      <div className="card">
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+          <h2 style={{ margin: 0 }}>Top-up Activity vs Baseline</h2>
+          <select className="select" value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ marginLeft: 'auto' }}>
+            <option value={7}>7-day baseline</option>
+            <option value={30}>30-day baseline</option>
+            <option value={90}>90-day baseline</option>
+          </select>
+        </div>
+        {data.items.length === 0 ? (
+          <p className="muted">No top-ups recorded today.</p>
+        ) : (
+          <table className="table">
+            <thead><tr><th>Staff</th><th>Today</th><th>Count</th><th>Biggest Single</th><th>Daily Avg ({data.windowDays}d)</th><th>Signal</th></tr></thead>
+            <tbody>
+              {data.items.map((r) => (
+                <tr key={r.staff.id} style={r.flagged ? { background: 'rgba(180,30,30,0.08)' } : undefined}>
+                  <td><strong>{r.staff.name}</strong><div className="muted small">{r.staff.role}</div></td>
+                  <td>{formatMWK(r.today.total)}</td>
+                  <td>{r.today.count}</td>
+                  <td>{formatMWK(r.today.maxSingle)}</td>
+                  <td>{formatMWK(r.baseline.dailyAvg)}</td>
+                  <td>{r.flagged ? <strong className="error">⚠ {r.reasons.join(', ').replace(/_/g, ' ')}</strong> : <span className="muted">Normal</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="muted small">Flags: 3× baseline above a {formatMWK(data.floor)} noise floor, or a single top-up at/above the {formatMWK(data.approvalThreshold)} approval threshold.</p>
+      </div>
+    </>
   );
 }
 

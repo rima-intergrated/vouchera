@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { query } from 'express-validator';
-import { getSummary, getRedemptions } from '../controllers/reports.controller.js';
+import { getSummary, getRedemptions, topupAnomalies } from '../controllers/reports.controller.js';
 import {
   issuanceReport,
   liabilityReport,
@@ -24,6 +24,17 @@ const dateFilters = [
 ];
 
 router.get('/summary', requireAuth, requirePermission('reports.read'), dateFilters, validate, getSummary);
+router.get(
+  '/topup-anomalies',
+  requireAuth,
+  requirePermission('reports.read'),
+  [
+    query('days').optional().isInt({ min: 7, max: 90 }).withMessage('days must be 7–90'),
+    query('floor').optional().isFloat({ min: 0 }).withMessage('floor must be >= 0'),
+  ],
+  validate,
+  topupAnomalies
+);
 router.get(
   '/redemptions',
   requireAuth,

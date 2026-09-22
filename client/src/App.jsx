@@ -9,6 +9,8 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import ForgotPin from './pages/ForgotPin.jsx';
 import ResetPin from './pages/ResetPin.jsx';
+import TwoFactorSetup from './pages/TwoFactorSetup.jsx';
+import Security from './pages/Security.jsx';
 import Register from './pages/Register.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Cashier from './pages/Cashier.jsx';
@@ -50,6 +52,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/forgot-pin" element={<ForgotPin />} />
           <Route path="/reset-pin" element={<ResetPin />} />
+          <Route path="/setup-2fa" element={<TwoFactorSetup />} />
           <Route path="/register" element={<Register />} />
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route
@@ -77,6 +80,7 @@ export default function App() {
             <Route path="/customers" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><Customers /></ProtectedRoute>} />
             <Route path="/customers/:id" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><CustomerDetails /></ProtectedRoute>} />
             <Route path="/approvals" element={<ProtectedRoute roles={['ADMIN']} fallback="/"><Approvals /></ProtectedRoute>} />
+            <Route path="/security" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']} fallback="/"><Security /></ProtectedRoute>} />
             <Route path="/stores" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><Stores /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute roles={['ADMIN']} fallback="/"><Users /></ProtectedRoute>} />
             <Route path="/redemptions" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><Redemptions /></ProtectedRoute>} />

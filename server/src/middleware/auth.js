@@ -5,10 +5,16 @@ import User from '../models/User.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
-export function signToken(user) {
+export function signToken(user, expiresIn = env.jwtExpiresIn) {
   return jwt.sign({ sub: String(user._id), role: user.role }, env.jwtSecret, {
-    expiresIn: env.jwtExpiresIn,
+    expiresIn,
   });
+}
+
+// Short-lived single-purpose token for the 2FA step-up (5 min). It is NOT a
+// session: requireAuth below rejects any token carrying a purpose.
+export function signChallenge(user, purpose) {
+  return jwt.sign({ sub: String(user._id), purpose }, env.jwtSecret, { expiresIn: '5m' });
 }
 
 // Session contract: every 401 produced here carries code SESSION_INVALID.
@@ -33,6 +39,8 @@ export const requireAuth = asyncHandler(async (req, res, next) => {
   } catch {
     throw sessionDead('Invalid or expired token');
   }
+  // Challenge/enroll tokens must never authenticate as a session.
+  if (payload.purpose) throw sessionDead('Invalid token subject');
   if (!mongoose.isValidObjectId(payload.sub)) throw sessionDead('Invalid token subject');
   const user = await User.findById(payload.sub)
     .populate('store', 'name code')

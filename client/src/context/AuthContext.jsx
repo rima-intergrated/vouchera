@@ -19,12 +19,34 @@ export function AuthProvider({ children }) {
     setError('');
     try {
       const { data } = await api.post('/auth/login', { email, password });
+      // Staff with 2FA don't get a session here — just a challenge to verify.
+      if (data.requires2fa) {
+        return { requires2fa: true, mustEnroll: !!data.mustEnroll, challengeToken: data.challengeToken };
+      }
       localStorage.setItem('sw_token', data.token);
       localStorage.setItem('sw_user', JSON.stringify(data.user));
       setUser(data.user);
       return data.user;
     } catch (err) {
       const msg = err.response?.data?.error || 'Login failed';
+      setError(msg);
+      throw new Error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const verify2fa = useCallback(async (challengeToken, token) => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.post('/auth/2fa/verify', { challengeToken, token });
+      localStorage.setItem('sw_token', data.token);
+      localStorage.setItem('sw_user', JSON.stringify(data.user));
+      setUser(data.user);
+      return data.user;
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Verification failed';
       setError(msg);
       throw new Error(msg);
     } finally {
@@ -56,7 +78,7 @@ export function AuthProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const value = useMemo(() => ({ user, loading, error, login, logout }), [user, loading, error, login, logout]);
+  const value = useMemo(() => ({ user, loading, error, login, verify2fa, logout }), [user, loading, error, login, verify2fa, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

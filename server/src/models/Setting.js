@@ -11,8 +11,14 @@ export const KNOWN_SETTINGS = {
   'loyalty.minRedeemPoints': { type: 'integer', min: 1, max: 1000000, default: 100, description: 'Minimum points per redemption at the till' },
   // Top-up maker-checker: credits at/above this MWK amount entered by
   // non-admin staff wait for ADMIN approval instead of applying instantly.
-  // 0 disables the gate (everything credits immediately).
-  'topup.approvalThresholdMWK': { type: 'number', min: 0, max: 100000000, default: 0, description: 'Top-ups at/above this amount need admin approval (0 = off)' },
+  // 0 disables the gate (everything credits immediately — not recommended).
+  'topup.approvalThresholdMWK': { type: 'number', min: 0, max: 100000000, default: 200000, description: 'Top-ups at/above this amount need admin approval (0 = off, not recommended)' },
+  // Staff two-factor authentication: when 1, ADMIN and MANAGER logins
+  // require a TOTP code (or mandatory enrollment on next login).
+  'security.requireStaff2fa': { type: 'integer', min: 0, max: 1, default: 0, description: 'Require 2FA for admin/manager logins (0 = optional, 1 = required)' },
+  // Short sessions for shared till devices (minutes). Applies to CASHIER
+  // logins; other roles use JWT_EXPIRES_IN.
+  'security.cashierSessionMinutes': { type: 'integer', min: 30, max: 1440, default: 480, description: 'Cashier session lifetime in minutes (shared tills: lower is safer)' },
 };
 
 const settingSchema = new mongoose.Schema(

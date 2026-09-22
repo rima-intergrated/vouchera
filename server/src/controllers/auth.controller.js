@@ -7,6 +7,8 @@ import { sendDirect } from '../services/notification.service.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { signToken } from '../middleware/auth.js';
+import { isTotpRole, staff2faRequired, sessionLifetime } from './twoFactor.controller.js';
+import { signChallenge } from '../middleware/auth.js';
 import { audit, generateVoucherCode } from '../utils/helpers.js';
 
 function publicUser(u) {
@@ -18,6 +20,7 @@ function publicUser(u) {
     store: u.store ?? null,
     customer: u.customer ?? null,
     isActive: u.isActive,
+    totpEnabled: !!u.totpEnabled,
   };
 }
 
@@ -38,8 +41,20 @@ export const login = asyncHandler(async (req, res) => {
     throw ApiError.unauthorized('Invalid credentials');
   }
 
+  // Staff 2FA gate: enrolled staff always step up with a TOTP code; once the
+  // admin enables security.requireStaff2fa, unenrolled staff must enroll on
+  // the spot (challenge token, 5 min) instead of entering.
+  if (isTotpRole(user.role) && (user.totpEnabled || (await staff2faRequired()))) {
+    if (user.totpEnabled) {
+      audit({ actor: user, action: 'auth.login.2fa.challenged', entity: 'User', entityId: String(user._id), req });
+      return res.json({ requires2fa: true, mustEnroll: false, challengeToken: signChallenge(user, '2fa-challenge') });
+    }
+    audit({ actor: user, action: 'auth.login.2fa.enroll-required', entity: 'User', entityId: String(user._id), req });
+    return res.json({ requires2fa: true, mustEnroll: true, challengeToken: signChallenge(user, '2fa-enroll') });
+  }
+
   audit({ actor: user, action: 'auth.login', entity: 'User', entityId: String(user._id), req });
-  const token = signToken(user);
+  const token = signToken(user, await sessionLifetime(user));
   res.json({ token, user: publicUser(user) });
 });
 
@@ -169,7 +184,7 @@ export const acceptInvite = asyncHandler(async (req, res) => {
   user.inviteAcceptedAt = new Date();
   await user.save();
   audit({ actor: user, action: 'user.invite.accepted', entity: 'User', entityId: String(user._id), req });
-  res.json({ token: signToken(user), user: publicUser(user) });
+  res.json({ token: signToken(user, await sessionLifetime(user)), user: publicUser(user) });
 });
 
 // Regenerate an invite link (ADMIN). Refused once the invite was accepted.
@@ -238,7 +253,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
   user.resetExpiresAt = null;
   await user.save();
   audit({ actor: user, action: 'auth.password.reset.completed', entity: 'User', entityId: String(user._id), req });
-  res.json({ token: signToken(user), user: publicUser(user) });
+  res.json({ token: signToken(user, await sessionLifetime(user)), user: publicUser(user) });
 });
 
 export const listUsers = asyncHandler(async (req, res) => {

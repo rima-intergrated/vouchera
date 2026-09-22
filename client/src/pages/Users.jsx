@@ -28,6 +28,18 @@ export default function Users() {
     }
   };
 
+  const reset2fa = async (u) => {
+    if (!window.confirm(`Reset 2FA for ${u.name}? They will sign in with password only until re-enrolling.`)) return;
+    setEditMsg({ kind: '', text: '' });
+    try {
+      await api.post(`/auth/users/${u.id}/2fa/reset`);
+      setEditMsg({ kind: 'ok', text: `2FA reset for ${u.name}.` });
+      load();
+    } catch (err) {
+      setEditMsg({ kind: 'error', text: err.response?.data?.error || '2FA reset failed.' });
+    }
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -134,11 +146,11 @@ export default function Users() {
       {!loading && !error && (
         <div className="card">
           <table className="table">
-            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Store</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Store</th><th>Status</th><th>2FA</th><th></th></tr></thead>
             <tbody>
               {users.map((u) => (
                 <UserRow key={u.id} user={u} stores={stores} editing={editing === u.id}
-                  onEdit={() => setEditing(u.id)} onCancel={() => setEditing(null)} onSave={saveEdit} onReinvite={() => reinvite(u)} storeName={storeName(u)} />
+                  onEdit={() => setEditing(u.id)} onCancel={() => setEditing(null)} onSave={saveEdit} onReinvite={() => reinvite(u)} onReset2fa={() => reset2fa(u)} storeName={storeName(u)} />
               ))}
             </tbody>
           </table>
@@ -148,7 +160,7 @@ export default function Users() {
   );
 }
 
-function UserRow({ user, stores, editing, onEdit, onCancel, onSave, onReinvite, storeName }) {
+function UserRow({ user, stores, editing, onEdit, onCancel, onSave, onReinvite, onReset2fa, storeName }) {
   const [role, setRole] = useState(user.role);
   const [store, setStore] = useState(user.store?._id ?? '');
   const [active, setActive] = useState(user.isActive);
@@ -162,10 +174,14 @@ function UserRow({ user, stores, editing, onEdit, onCancel, onSave, onReinvite, 
         <td>{user.role}</td>
         <td>{storeName}</td>
         <td>{user.isActive ? 'Active' : 'Disabled'}{user.invitePending ? ' · Invite pending' : ''}</td>
+        <td>{['ADMIN', 'MANAGER'].includes(user.role) ? (user.totpEnabled ? 'On' : 'Off') : '—'}</td>
         <td>
           <div className="actions">
             <button className="btn secondary" onClick={onEdit}>Edit</button>
             {user.invitePending && <button className="btn secondary" onClick={onReinvite}>Resend Invite</button>}
+            {['ADMIN', 'MANAGER'].includes(user.role) && user.totpEnabled && (
+              <button className="btn secondary" onClick={onReset2fa}>Reset 2FA</button>
+            )}
           </div>
         </td>
       </tr>

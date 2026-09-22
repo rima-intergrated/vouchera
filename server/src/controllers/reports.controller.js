@@ -3,7 +3,10 @@ import VoucherRedemption from '../models/VoucherRedemption.js';
 import Customer from '../models/Customer.js';
 import WalletTransaction from '../models/WalletTransaction.js';
 import Store from '../models/Store.js';
+import User from '../models/User.js';
+import Setting from '../models/Setting.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { audit } from '../utils/helpers.js';
 
 // Optional ?from=YYYY-MM-DD&to=YYYY-MM-DD scope for redemption metrics.
 // Voucher snapshot metrics (counts, issued, outstanding) are always all-time.
@@ -159,6 +162,77 @@ export const getSummary = asyncHandler(async (req, res) => {
     })),
     filter: { from: req.query.from ?? null, to: req.query.to ?? null },
   });
+});
+
+// GET /api/reports/topup-anomalies?days=30&floor=50000
+//
+// Fraud tripwire for self-crediting staff: per-performer top-up totals for
+// today against their own trailing daily average. Flags when today's total
+// reaches 3× the baseline AND clears a noise floor (a quiet cashier's first
+// K1,000 day is not fraud), or when any single top-up hits the approval
+// threshold. Run daily; every check is audit-logged with its flag count.
+export const topupAnomalies = asyncHandler(async (req, res) => {
+  const days = Math.min(90, Math.max(7, parseInt(req.query.days ?? '30', 10) || 30));
+  const floor = Math.max(0, Number(req.query.floor ?? 50000) || 0);
+
+  const now = new Date();
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const baseStart = new Date(todayStart.getTime() - days * 86400000);
+
+  const [todayAgg, baseAgg, thresholdRow] = await Promise.all([
+    WalletTransaction.aggregate([
+      { $match: { type: 'TOP_UP', createdAt: { $gte: todayStart } } },
+      { $group: { _id: '$performedBy', total: { $sum: '$amount' }, count: { $sum: 1 }, maxSingle: { $max: '$amount' } } },
+    ]),
+    WalletTransaction.aggregate([
+      { $match: { type: 'TOP_UP', createdAt: { $gte: baseStart, $lt: todayStart } } },
+      {
+        $group: {
+          _id: '$performedBy',
+          total: { $sum: '$amount' },
+          activeDays: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } } },
+        },
+      },
+    ]),
+    Setting.findOne({ key: 'topup.approvalThresholdMWK' }).select('value').lean(),
+  ]);
+  const threshold = Number(thresholdRow?.value ?? 0);
+
+  const staffIds = [...new Set([...todayAgg, ...baseAgg].map((r) => String(r._id)).filter(Boolean))];
+  const staff = await User.find({ _id: { $in: staffIds } }).select('name email role').lean();
+  const byId = Object.fromEntries(staff.map((u) => [String(u._id), u]));
+  const baseById = Object.fromEntries(baseAgg.map((r) => [String(r._id), r]));
+
+  const items = todayAgg
+    .filter((r) => r._id)
+    .map((r) => {
+      const id = String(r._id);
+      const base = baseById[id];
+      const dailyAvg = base ? base.total / days : 0;
+      const ratio = dailyAvg > 0 ? r.total / dailyAvg : (r.total >= floor ? Infinity : 0);
+      const reasons = [];
+      if (r.total >= Math.max(3 * dailyAvg, floor)) reasons.push(r.total >= floor && dailyAvg === 0 ? 'FIRST_ACTIVITY_ABOVE_FLOOR' : 'SPIKE_VS_BASELINE');
+      if (threshold > 0 && r.maxSingle >= threshold) reasons.push('SINGLE_ABOVE_APPROVAL_THRESHOLD');
+      return {
+        staff: byId[id] ? { id, name: byId[id].name, email: byId[id].email, role: byId[id].role } : { id, name: 'Unknown', email: '', role: '' },
+        today: { total: Math.round(r.total * 100) / 100, count: r.count, maxSingle: r.maxSingle },
+        baseline: { windowDays: days, dailyAvg: Math.round(dailyAvg * 100) / 100 },
+        ratio: ratio === Infinity ? null : Math.round(ratio * 100) / 100,
+        flagged: reasons.length > 0,
+        reasons,
+      };
+    })
+    .sort((a, b) => Number(b.flagged) - Number(a.flagged) || b.today.total - a.today.total);
+
+  const flagged = items.filter((i) => i.flagged).length;
+  audit({
+    actor: req.user,
+    action: 'reports.anomalies.checked',
+    entity: 'WalletTransaction',
+    metadata: { windowDays: days, floor, checked: items.length, flagged },
+    req,
+  });
+  res.json({ generatedAt: now.toISOString(), windowDays: days, floor, approvalThreshold: threshold, flagged, items });
 });
 
 // GET /api/reports/redemptions?from&to&store&page&limit

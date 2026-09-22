@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { login, me, logout, createUser, listUsers, updateUser, acceptInvite, reinviteUser, forgotPassword, resetPassword, registerCustomer } from '../controllers/auth.controller.js';
 import { forgotPin, resetPin } from '../controllers/pin.controller.js';
+import { setup2fa, enable2fa, disable2fa, enroll2fa, activate2fa, verify2fa, reset2fa } from '../controllers/twoFactor.controller.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireRole } from '../middleware/authorize.js';
 import { validate } from '../middleware/validate.js';
@@ -63,6 +64,18 @@ router.post(
   validate,
   resetPin
 );
+
+// Staff two-factor authentication (TOTP). Step-up endpoints ride the auth
+// rate limiter; session endpoints are ADMIN/MANAGER self-service.
+const totpCode = body('token').trim().matches(/^\d{6,8}$/).withMessage('Enter the 6-digit code');
+const challenge = body('challengeToken').trim().notEmpty().withMessage('Verification session is required');
+router.post('/2fa/verify', [challenge, totpCode], validate, verify2fa);
+router.post('/2fa/enroll', [challenge], validate, enroll2fa);
+router.post('/2fa/activate', [challenge, totpCode], validate, activate2fa);
+router.post('/2fa/setup', requireAuth, requireRole('ADMIN', 'MANAGER'), setup2fa);
+router.post('/2fa/enable', requireAuth, requireRole('ADMIN', 'MANAGER'), [totpCode], validate, enable2fa);
+router.post('/2fa/disable', requireAuth, requireRole('ADMIN', 'MANAGER'), [totpCode], validate, disable2fa);
+router.post('/users/:id/2fa/reset', requireAuth, requireRole('ADMIN'), [param('id').isMongoId().withMessage('Invalid user id')], validate, reset2fa);
 
 // User management (ADMIN only) — mounted under /api/auth for Phase 1;
 // promoted to /api/users in a later phase with full CRUD.

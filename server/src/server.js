@@ -4,7 +4,7 @@ import { env, validateEnv } from './config/env.js';
 import { registerEmailChannel } from './channels/email.channel.js';
 import { registerSmsChannel } from './channels/sms.channel.js';
 
-validateEnv({ strict: false });
+validateEnv({ strict: env.nodeEnv === 'production' });
 
 // Notification providers plug in here — each is a no-op without its env
 // config, so the API boots identically in dev and production.

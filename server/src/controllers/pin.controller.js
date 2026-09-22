@@ -10,11 +10,12 @@ import { sendDirect } from '../services/notification.service.js';
 
 // POST /api/customers/me/pin — first-time set (CUSTOMER self-service).
 // Refused if a PIN already exists (use change instead).
+// CUSTOMER-only: enforced here as well as on the route, so staff logins can
+// never set or overwrite a customer's till PIN through this handler.
 export const setPin = asyncHandler(async (req, res) => {
-  const customerId = req.user.role === 'CUSTOMER'
-    ? String(req.user.customer?._id || req.user.customer || '')
-    : String(req.body.customerId || '');
-  if (!customerId) throw ApiError.badRequest('customerId is required');
+  if (req.user.role !== 'CUSTOMER') throw ApiError.forbidden('Customers only');
+  const customerId = String(req.user.customer?._id || req.user.customer || '');
+  if (!customerId) throw ApiError.forbidden('No customer account linked to this login');
   assertPinFormat(req.body.pin);
   const customer = await Customer.findById(customerId).select('+pinHash');
   if (!customer) throw ApiError.notFound('Customer not found');
@@ -28,24 +29,22 @@ export const setPin = asyncHandler(async (req, res) => {
   res.status(201).json({ pinSet: true, pinSetAt: customer.pinSetAt });
 });
 
-// POST /api/customers/me/pin/change — requires current PIN (or staff override).
+// POST /api/customers/me/pin/change — requires current PIN.
+// CUSTOMER-only (see setPin): staff resets go through the customer-owned
+// email flow, never through this handler.
 export const changePin = asyncHandler(async (req, res) => {
-  const selfService = req.user.role === 'CUSTOMER';
-  const customerId = selfService
-    ? String(req.user.customer?._id || req.user.customer || '')
-    : String(req.body.customerId || '');
-  if (!customerId) throw ApiError.badRequest('customerId is required');
+  if (req.user.role !== 'CUSTOMER') throw ApiError.forbidden('Customers only');
+  const customerId = String(req.user.customer?._id || req.user.customer || '');
+  if (!customerId) throw ApiError.forbidden('No customer account linked to this login');
   assertPinFormat(req.body.newPin);
   const customer = await Customer.findById(customerId).select('+pinHash');
   if (!customer) throw ApiError.notFound('Customer not found');
   if (!customer.pinHash) throw ApiError.badRequest('No PIN set yet — set one first');
 
-  if (selfService) {
-    const bcrypt = (await import('bcryptjs')).default;
-    const ok = await bcrypt.compare(String(req.body.currentPin || ''), customer.pinHash);
-    // 400, not 401 — a wrong current PIN must never read as a dead session.
-    if (!ok) throw ApiError.badRequest('Current PIN is incorrect');
-  }
+  const bcrypt = (await import('bcryptjs')).default;
+  const ok = await bcrypt.compare(String(req.body.currentPin || ''), customer.pinHash);
+  // 400, not 401 — a wrong current PIN must never read as a dead session.
+  if (!ok) throw ApiError.badRequest('Current PIN is incorrect');
   customer.pinHash = await hashPin(req.body.newPin);
   customer.pinSetAt = new Date();
   customer.pinFailedAttempts = 0;
