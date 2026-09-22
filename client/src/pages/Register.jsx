@@ -4,7 +4,7 @@ import api from '../services/api.js';
 
 // Public customer self-registration. The server force-sets role CUSTOMER —
 // staff accounts can only be created by an admin.
-// Step 2 collects the 6-digit till payment PIN right after signup.
+// Step 2 collects the 4-digit till payment PIN right after signup.
 export default function Register() {
   const [step, setStep] = useState('details');
   const [form, setForm] = useState({ name: '', phone: '', email: '', password: '', confirm: '' });
@@ -42,8 +42,8 @@ export default function Register() {
   const submitPin = async (e) => {
     e.preventDefault();
     setError('');
-    if (!/^\d{6}$/.test(pin.pin)) {
-      setError('PIN must be exactly 6 digits.');
+    if (!/^\d{4}$/.test(pin.pin)) {
+      setError('PIN must be exactly 4 digits.');
       return;
     }
     if (pin.pin !== pin.confirm) {
@@ -71,17 +71,17 @@ export default function Register() {
         {step === 'pin' ? (
           <>
             <h1 className="auth-title">Set Payment PIN</h1>
-            <p className="muted auth-subtitle">Choose a 6-digit PIN to authorise till payments when your code is scanned</p>
+            <p className="muted auth-subtitle">Choose a 4-digit PIN to authorise till payments when your code is scanned</p>
             <form onSubmit={submitPin}>
               <div className="field">
-                <label htmlFor="pin">6-digit PIN</label>
-                <input id="pin" className="input cashier-input" type="password" inputMode="numeric" maxLength={6} autoComplete="new-password"
-                  value={pin.pin} onChange={(e) => setPin({ ...pin, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })} required />
+                <label htmlFor="pin">4-digit PIN</label>
+                <input id="pin" className="input cashier-input" type="password" inputMode="numeric" minLength={4} maxLength={4} autoComplete="new-password"
+                  value={pin.pin} onChange={(e) => setPin({ ...pin, pin: e.target.value.replace(/\D/g, '').slice(0, 4) })} required />
               </div>
               <div className="field">
                 <label htmlFor="pin2">Confirm PIN</label>
-                <input id="pin2" className="input cashier-input" type="password" inputMode="numeric" maxLength={6} autoComplete="new-password"
-                  value={pin.confirm} onChange={(e) => setPin({ ...pin, confirm: e.target.value.replace(/\D/g, '').slice(0, 6) })} required />
+                <input id="pin2" className="input cashier-input" type="password" inputMode="numeric" minLength={4} maxLength={4} autoComplete="new-password"
+                  value={pin.confirm} onChange={(e) => setPin({ ...pin, confirm: e.target.value.replace(/\D/g, '').slice(0, 4) })} required />
               </div>
               {error && <p className="error">{error}</p>}
               <button className="btn" type="submit" disabled={busy} style={{ width: '100%' }}>

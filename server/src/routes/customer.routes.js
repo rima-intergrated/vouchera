@@ -13,7 +13,7 @@ router.get('/me', requireAuth, getMe);
 router.post(
   '/me/pin',
   requireAuth,
-  [body('pin').matches(/^\d{6}$/).withMessage('PIN must be exactly 6 digits')],
+  [body('pin').matches(/^\d{4}$/).withMessage('PIN must be exactly 4 digits')],
   validate,
   setPin
 );
@@ -22,7 +22,7 @@ router.post(
   requireAuth,
   [
     body('currentPin').optional().trim(),
-    body('newPin').matches(/^\d{6}$/).withMessage('PIN must be exactly 6 digits'),
+    body('newPin').matches(/^\d{4}$/).withMessage('PIN must be exactly 4 digits'),
   ],
   validate,
   changePin

@@ -145,7 +145,7 @@ export const validateWallet = asyncHandler(async (req, res) => {
 });
 
 // POST /api/wallets/debit — explicit till purchase from a wallet (cashiers).
-// The customer's 6-digit PIN authorises the debit; optional loyaltyPoints
+// The customer's 4-digit PIN authorises the debit; optional loyaltyPoints
 // spends points for a discount in the same authorisation.
 export const debitWalletHandler = asyncHandler(async (req, res) => {
   const storeId = req.body.storeId || req.user.store?._id || req.user.store || null;

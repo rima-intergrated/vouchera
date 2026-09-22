@@ -14,7 +14,7 @@ const customerSchema = new mongoose.Schema(
     walletBalance: { type: Number, default: 0, min: 0 },
     // Personal wallet code for the portal QR (code only, like vouchers)
     walletCode: { type: String, uppercase: true, trim: true, default: undefined },
-    // 6-digit transaction PIN (bcrypt hash, never returned). Required to
+    // 4-digit transaction PIN (bcrypt hash, never returned). Required to
     // authorise till debits from this account.
     pinHash: { type: String, default: undefined, select: false },
     pinSetAt: { type: Date, default: null },

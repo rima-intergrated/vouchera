@@ -10,6 +10,7 @@ export const errorHandler = (err, req, res, next) => {
   let status = err.status || 500;
   let message = err.message || 'Internal server error';
   let details = err.details;
+  const code = typeof err.code === 'string' ? err.code : undefined;
 
   // Normalize common Mongoose/Mongo errors
   if (err instanceof mongoose.Error.ValidationError) {
@@ -31,5 +32,5 @@ export const errorHandler = (err, req, res, next) => {
   }
 
   if (status >= 500) console.error('[api:error]', err);
-  res.status(status).json({ error: message, ...(details ? { details } : {}) });
+  res.status(status).json({ error: message, ...(code ? { code } : {}), ...(details ? { details } : {}) });
 };

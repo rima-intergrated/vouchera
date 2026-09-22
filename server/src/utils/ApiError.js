@@ -3,6 +3,10 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
     this.details = details;
+    // Machine-readable error code (serialized as `code` by errorHandler).
+    // Only string codes are serialized — numeric `code` stays reserved for
+    // driver errors (e.g. Mongo 11000).
+    this.code = undefined;
   }
 
   static badRequest(msg = 'Bad request', details) {

@@ -132,7 +132,7 @@ export const redeemVoucher = asyncHandler(async (req, res) => {
     throw ApiError.conflict(REASONS[voucher.status] ?? 'Voucher cannot be redeemed');
   }
 
-  // Customer-linked vouchers require the holder's 6-digit till PIN.
+  // Customer-linked vouchers require the holder's 4-digit till PIN.
   // Bearer/paper vouchers (no customer link) skip PIN authorisation.
   let pinCustomer = null;
   if (voucher.customer) {

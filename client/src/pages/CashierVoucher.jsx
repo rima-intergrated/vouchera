@@ -33,7 +33,7 @@ export default function CashierVoucher() {
   const [success, setSuccess] = useState(null);
   const [stores, setStores] = useState([]);
   const [storePick, setStorePick] = useState('');
-  // Till authorisation: customer types their 6-digit PIN on this device.
+  // Till authorisation: customer types their 4-digit PIN on this device.
   const [pin, setPin] = useState('');
   const [usePoints, setUsePoints] = useState(false);
   const [points, setPoints] = useState('');
@@ -114,8 +114,8 @@ export default function CashierVoucher() {
       setError(`Amount exceeds the remaining balance (${formatMWK(result.voucher.remainingBalance)}).`);
       return;
     }
-    if (result?.requiresPin && !/^\d{6}$/.test(pin)) {
-      setError('Ask the customer to enter their 6-digit payment PIN.');
+    if (result?.requiresPin && !/^\d{4}$/.test(pin)) {
+      setError('Ask the customer to enter their 4-digit payment PIN.');
       return;
     }
     if (usePoints) {
@@ -173,6 +173,9 @@ export default function CashierVoucher() {
       } else {
         setError(err.response.data?.error || 'Redemption failed.');
       }
+      // A wrong PIN must never linger on screen — customer retries cleanly,
+      // and the cashier's session is untouched (stays on this page).
+      setPin('');
       setConfirming(false);
     } finally {
       setRedeeming(false);
@@ -312,9 +315,9 @@ export default function CashierVoucher() {
           )}
           {result?.requiresPin && (
             <div className="field">
-              <label htmlFor="pin">Customer PIN (6 digits)</label>
-              <input id="pin" className="input cashier-input" type="password" inputMode="numeric" maxLength={6} autoComplete="off"
-                placeholder="••••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} required />
+              <label htmlFor="pin">Customer PIN (4 digits)</label>
+              <input id="pin" className="input cashier-input" type="password" inputMode="numeric" minLength={4} maxLength={4} autoComplete="off"
+                placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} required />
               <p className="muted small">Customer enters their PIN on this device to authorise.</p>
             </div>
           )}

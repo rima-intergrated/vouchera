@@ -2,14 +2,14 @@ import bcrypt from 'bcryptjs';
 import Customer from '../models/Customer.js';
 import { ApiError } from '../utils/ApiError.js';
 
-export const PIN_LENGTH = 6;
-export const PIN_REGEX = /^\d{6}$/;
+export const PIN_LENGTH = 4;
+export const PIN_REGEX = /^\d{4}$/;
 export const PIN_MAX_ATTEMPTS = 5;
 export const PIN_LOCK_MS = 15 * 60 * 1000;
 
 export function assertPinFormat(pin) {
   if (!PIN_REGEX.test(String(pin ?? ''))) {
-    throw ApiError.badRequest('PIN must be exactly 6 digits');
+    throw ApiError.badRequest('PIN must be exactly 4 digits');
   }
 }
 
@@ -64,5 +64,8 @@ export async function verifyCustomerPin(customer, pin) {
     err.status = 423;
     throw err;
   }
-  throw ApiError.unauthorized(`Wrong PIN (${PIN_MAX_ATTEMPTS - attempts} attempts left)`);
+  // NOTE: 400, not 401 — the cashier's session is fine; it is the
+  // *customer's* credential that is wrong. A 401 would make the till client
+  // treat this as a dead session and log the cashier out.
+  throw ApiError.badRequest(`Wrong PIN (${PIN_MAX_ATTEMPTS - attempts} attempts left)`);
 }

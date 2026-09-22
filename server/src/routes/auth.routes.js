@@ -58,7 +58,7 @@ router.post(
   '/reset-pin',
   [
     body('token').trim().notEmpty().withMessage('Reset token is required'),
-    body('pin').matches(/^\d{6}$/).withMessage('PIN must be exactly 6 digits'),
+    body('pin').matches(/^\d{4}$/).withMessage('PIN must be exactly 4 digits'),
   ],
   validate,
   resetPin

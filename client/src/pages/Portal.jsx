@@ -95,7 +95,7 @@ export default function Portal() {
       {!me?.pinSet && (
         <div className="card confirm-box">
           <p><strong>Set your payment PIN</strong></p>
-          <p className="muted small">You need a 6-digit PIN to authorise payments when your code is scanned at the till.</p>
+          <p className="muted small">You need a 4-digit PIN to authorise payments when your code is scanned at the till.</p>
           <button className="btn" onClick={() => setTab('security')}>Set PIN now</button>
         </div>
       )}      <div className="card balance-hero">
@@ -183,8 +183,8 @@ function PinPanel({ pinSet, onChanged }) {
   const submit = async (e) => {
     e.preventDefault();
     setMsg({ kind: '', text: '' });
-    if (!/^\d{6}$/.test(next)) {
-      setMsg({ kind: 'error', text: 'PIN must be exactly 6 digits.' });
+    if (!/^\d{4}$/.test(next)) {
+      setMsg({ kind: 'error', text: 'PIN must be exactly 4 digits.' });
       return;
     }
     if (next !== confirm) {
@@ -216,26 +216,26 @@ function PinPanel({ pinSet, onChanged }) {
       <h2>{pinSet ? 'Change payment PIN' : 'Set payment PIN'}</h2>
       <p className="muted small">
         {pinSet
-          ? 'Enter your current 6-digit PIN, then choose a new one.'
-          : 'Choose a 6-digit PIN. You will enter it at the till to authorise payments from your account.'}
+          ? 'Enter your current 4-digit PIN, then choose a new one.'
+          : 'Choose a 4-digit PIN. You will enter it at the till to authorise payments from your account.'}
       </p>
       <form onSubmit={submit}>
         {pinSet && (
           <div className="field">
             <label htmlFor="cur-pin">Current PIN</label>
-            <input id="cur-pin" className="input cashier-input" type="password" inputMode="numeric" maxLength={6} autoComplete="off"
-              value={current} onChange={(e) => setCurrent(e.target.value.replace(/\D/g, '').slice(0, 6))} required />
+            <input id="cur-pin" className="input cashier-input" type="password" inputMode="numeric" minLength={4} maxLength={4} autoComplete="off"
+              value={current} onChange={(e) => setCurrent(e.target.value.replace(/\D/g, '').slice(0, 4))} required />
           </div>
         )}
         <div className="field">
-          <label htmlFor="new-pin">{pinSet ? 'New PIN (6 digits)' : 'PIN (6 digits)'}</label>
-          <input id="new-pin" className="input cashier-input" type="password" inputMode="numeric" maxLength={6} autoComplete="new-password"
-            value={next} onChange={(e) => setNext(e.target.value.replace(/\D/g, '').slice(0, 6))} required />
+          <label htmlFor="new-pin">{pinSet ? 'New PIN (4 digits)' : 'PIN (4 digits)'}</label>
+          <input id="new-pin" className="input cashier-input" type="password" inputMode="numeric" minLength={4} maxLength={4} autoComplete="new-password"
+            value={next} onChange={(e) => setNext(e.target.value.replace(/\D/g, '').slice(0, 4))} required />
         </div>
         <div className="field">
           <label htmlFor="cfm-pin">Confirm PIN</label>
-          <input id="cfm-pin" className="input cashier-input" type="password" inputMode="numeric" maxLength={6} autoComplete="new-password"
-            value={confirm} onChange={(e) => setConfirm(e.target.value.replace(/\D/g, '').slice(0, 6))} required />
+          <input id="cfm-pin" className="input cashier-input" type="password" inputMode="numeric" minLength={4} maxLength={4} autoComplete="new-password"
+            value={confirm} onChange={(e) => setConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))} required />
         </div>
         {msg.text && <p className={msg.kind === 'error' ? 'error' : 'muted'}>{msg.text}</p>}
         <button className="btn" type="submit" disabled={busy} style={{ width: '100%' }}>

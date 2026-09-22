@@ -14,8 +14,8 @@ export default function ResetPin() {
   const submit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!/^\d{6}$/.test(pin)) {
-      setError('PIN must be exactly 6 digits.');
+    if (!/^\d{4}$/.test(pin)) {
+      setError('PIN must be exactly 4 digits.');
       return;
     }
     if (pin !== confirm) {
@@ -55,17 +55,17 @@ export default function ResetPin() {
           </>
         ) : (
           <>
-            <p className="muted auth-subtitle">Choose a new 6-digit till payment PIN.</p>
+            <p className="muted auth-subtitle">Choose a new 4-digit till payment PIN.</p>
             <form onSubmit={submit}>
               <div className="field">
-                <label htmlFor="pin">New PIN (6 digits)</label>
-                <input id="pin" className="input cashier-input" type="password" inputMode="numeric" maxLength={6} autoComplete="new-password"
-                  value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} required />
+                <label htmlFor="pin">New PIN (4 digits)</label>
+                <input id="pin" className="input cashier-input" type="password" inputMode="numeric" minLength={4} maxLength={4} autoComplete="new-password"
+                  value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} required />
               </div>
               <div className="field">
                 <label htmlFor="pin2">Confirm PIN</label>
-                <input id="pin2" className="input cashier-input" type="password" inputMode="numeric" maxLength={6} autoComplete="new-password"
-                  value={confirm} onChange={(e) => setConfirm(e.target.value.replace(/\D/g, '').slice(0, 6))} required />
+                <input id="pin2" className="input cashier-input" type="password" inputMode="numeric" minLength={4} maxLength={4} autoComplete="new-password"
+                  value={confirm} onChange={(e) => setConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))} required />
               </div>
               {error && <p className="error">{error}</p>}
               <button className="btn" type="submit" disabled={busy} style={{ width: '100%' }}>

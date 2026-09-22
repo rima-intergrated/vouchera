@@ -43,7 +43,8 @@ export const changePin = asyncHandler(async (req, res) => {
   if (selfService) {
     const bcrypt = (await import('bcryptjs')).default;
     const ok = await bcrypt.compare(String(req.body.currentPin || ''), customer.pinHash);
-    if (!ok) throw ApiError.unauthorized('Current PIN is incorrect');
+    // 400, not 401 — a wrong current PIN must never read as a dead session.
+    if (!ok) throw ApiError.badRequest('Current PIN is incorrect');
   }
   customer.pinHash = await hashPin(req.body.newPin);
   customer.pinSetAt = new Date();
@@ -79,7 +80,7 @@ export const forgotPin = asyncHandler(async (req, res) => {
       channel: 'email',
       recipient: user.email,
       subject: 'Reset your Vouchera payment PIN',
-      text: `Hello ${user.name},\n\nReset your 6-digit till payment PIN within 1 hour:\n\n${pinResetLink(token)}\n\nIf you did not request this, ignore this message.`,
+      text: `Hello ${user.name},\n\nReset your 4-digit till payment PIN within 1 hour:\n\n${pinResetLink(token)}\n\nIf you did not request this, ignore this message.`,
       actor: user,
     });
   } catch {
