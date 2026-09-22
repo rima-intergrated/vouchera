@@ -15,6 +15,7 @@ import auditRoutes from './routes/audit.routes.js';
 import walletRoutes from './routes/wallet.routes.js';
 import loyaltyRoutes from './routes/loyalty.routes.js';
 import settingsRoutes from './routes/settings.routes.js';
+import onlineRoutes from './routes/online.routes.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 
 const app = express();
@@ -69,6 +70,7 @@ app.use('/api/audit-logs', auditRoutes);
 app.use('/api/wallets', walletRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/online', onlineRoutes);
 
 // All module routes mounted above.
 
