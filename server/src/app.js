@@ -13,6 +13,7 @@ import customerRoutes from './routes/customer.routes.js';
 import campaignRoutes from './routes/campaign.routes.js';
 import auditRoutes from './routes/audit.routes.js';
 import walletRoutes from './routes/wallet.routes.js';
+import loyaltyRoutes from './routes/loyalty.routes.js';
 import settingsRoutes from './routes/settings.routes.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 
@@ -66,6 +67,7 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/audit-logs', auditRoutes);
 app.use('/api/wallets', walletRoutes);
+app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/settings', settingsRoutes);
 
 // All module routes mounted above.

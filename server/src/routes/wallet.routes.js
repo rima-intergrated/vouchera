@@ -70,6 +70,8 @@ router.post(
     body('posTransactionReference').trim().notEmpty().withMessage('POS transaction reference is required'),
     body('storeId').optional().isMongoId().withMessage('Invalid store id'),
     body('idempotencyKey').optional().isUUID().withMessage('Invalid idempotency key'),
+    body('pin').trim().matches(/^\d{6}$/).withMessage('Payment PIN must be exactly 6 digits'),
+    body('loyaltyPoints').optional().isInt({ min: 0 }).withMessage('Loyalty points must be a whole number'),
   ],
   validate,
   debitWalletHandler

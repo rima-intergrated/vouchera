@@ -12,6 +12,7 @@ const REASON_TEXT = {
   SUSPENDED: 'This voucher is suspended. Ask a manager for help.',
   FULLY_REDEEMED: 'This voucher is fully redeemed — zero balance left.',
   EMPTY: 'This wallet has zero balance. Top it up first.',
+  PIN_NOT_SET: 'This account has no payment PIN yet — the customer must set it in the portal first.',
 };
 
 // WC- codes are customer wallets (portal QRs); everything else is a voucher.
@@ -32,6 +33,10 @@ export default function CashierVoucher() {
   const [success, setSuccess] = useState(null);
   const [stores, setStores] = useState([]);
   const [storePick, setStorePick] = useState('');
+  // Till authorisation: customer types their 6-digit PIN on this device.
+  const [pin, setPin] = useState('');
+  const [usePoints, setUsePoints] = useState(false);
+  const [points, setPoints] = useState('');
 
   // The till store comes from the cashier's account, not from typing:
   // assigned cashiers are locked to their store; unassigned ones pick it.
@@ -50,6 +55,9 @@ export default function CashierVoucher() {
         ? {
             valid: true,
             code: raw.code,
+            requiresPin: true,
+            pinSet: raw.pinSet,
+            loyalty: raw.loyalty,
             voucher: {
               code: raw.code,
               originalValue: raw.wallet.balance,
@@ -62,6 +70,13 @@ export default function CashierVoucher() {
             },
           }
         : raw;
+      // Till debits need a PIN on the account — block early with guidance.
+      if (data.valid && data.requiresPin && data.pinSet === false) {
+        setResult(data);
+        setState('invalid');
+        setReason('PIN_NOT_SET');
+        return;
+      }
       setResult(data);
       setState(data.valid ? 'valid' : 'invalid');
       if (!data.valid) setReason(data.reason || 'NOT_FOUND');
@@ -95,9 +110,29 @@ export default function CashierVoucher() {
       setError('Enter an amount greater than 0.');
       return;
     }
-    if (result?.voucher && value > result.voucher.remainingBalance) {
+    if (result?.voucher && value > result.voucher.remainingBalance && !usePoints) {
       setError(`Amount exceeds the remaining balance (${formatMWK(result.voucher.remainingBalance)}).`);
       return;
+    }
+    if (result?.requiresPin && !/^\d{6}$/.test(pin)) {
+      setError('Ask the customer to enter their 6-digit payment PIN.');
+      return;
+    }
+    if (usePoints) {
+      const pts = Math.floor(Number(points) || 0);
+      const min = result?.loyalty?.minRedeemPoints ?? 1;
+      if (!Number.isFinite(pts) || pts <= 0) {
+        setError('Enter the points to redeem.');
+        return;
+      }
+      if (pts < min) {
+        setError(`Minimum ${min} points per redemption.`);
+        return;
+      }
+      if (pts > (result?.loyalty?.points ?? 0)) {
+        setError(`Only ${result?.loyalty?.points ?? 0} points available.`);
+        return;
+      }
     }
     setConfirming(true);
   };
@@ -113,15 +148,24 @@ export default function CashierVoucher() {
         posTransactionReference: posRef.trim(),
         ...(storeId ? { storeId: String(storeId) } : {}),
         idempotencyKey: crypto.randomUUID(),
+        ...(result?.requiresPin ? { pin } : {}),
+        ...(usePoints && points ? { loyaltyPoints: Math.floor(Number(points)) } : {}),
       };
       const { data: raw } = wallet
         ? await api.post('/wallets/debit', { ...payload, walletCode: code })
         : await api.post('/vouchers/redeem', { ...payload, code });
       const data = wallet
-        ? { replayed: raw.replayed, redemption: raw.redemption, voucher: { code: raw.wallet.code, remainingBalance: raw.wallet.remainingBalance } }
+        ? {
+            replayed: raw.replayed,
+            redemption: { ...raw.redemption, source: raw.redemption?.source ?? 'WALLET' },
+            voucher: { code: raw.wallet.code, remainingBalance: raw.wallet.remainingBalance },
+            loyalty: raw.loyalty,
+            earnedPoints: raw.earnedPoints,
+          }
         : raw;
       setSuccess(data);
       setConfirming(false);
+      setPin('');
       setState('success');
     } catch (err) {
       if (!err.response) {
@@ -145,13 +189,20 @@ export default function CashierVoucher() {
   }
 
   if (state === 'success' && success) {
+    const src = success.redemption?.source ?? (wallet ? 'WALLET' : 'VOUCHER');
     return (
       <div className="cashier-wrap">
         <div className="card success-card">
-          <h1 className="success-title">{wallet ? '✓ WALLET DEBITED' : '✓ VOUCHER REDEEMED'}</h1>
+          <h1 className="success-title">{src === 'LOYALTY' ? '✓ PAID WITH POINTS' : wallet ? '✓ WALLET DEBITED' : '✓ VOUCHER REDEEMED'}</h1>
           <dl className="cashier-details">
             <div><dt>Amount</dt><dd>{formatMWK(success.redemption.amountRedeemed)}</dd></div>
+            {success.loyalty && (
+              <div><dt>Points Used</dt><dd>{success.loyalty.points} pts (−{formatMWK(success.loyalty.discount)})</dd></div>
+            )}
             <div><dt>Remaining Balance</dt><dd>{formatMWK(success.voucher.remainingBalance)}</dd></div>
+            {success.earnedPoints ? (
+              <div><dt>Points Earned</dt><dd>+{success.earnedPoints} pts</dd></div>
+            ) : null}
             <div><dt>Reference</dt><dd>{success.redemption.redemptionReference}</dd></div>
             <div><dt>POS Transaction</dt><dd>{success.redemption.posTransactionReference}</dd></div>
             <div><dt>Date/Time</dt><dd>{new Date(success.redemption.redeemedAt).toLocaleString('en-GB')}</dd></div>
@@ -184,7 +235,13 @@ export default function CashierVoucher() {
     ? (user?.store?.name || 'Assigned store')
     : (stores.find((s) => s._id === storePick)?.name || 'Select store below');
   const confirmAmount = Number(amount) || 0;
-  const afterBalance = Math.max(0, v.remainingBalance - confirmAmount);
+  const loyaltyInfo = result.loyalty ?? null;
+  const pointsValue = (pts) => (loyaltyInfo ? (Math.floor(Number(pts) || 0) * loyaltyInfo.mwkPerPoint) : 0);
+  const activePoints = usePoints ? Math.min(Math.floor(Number(points) || 0), loyaltyInfo?.points ?? 0) : 0;
+  const activeDiscount = Math.min(pointsValue(activePoints), confirmAmount);
+  const afterBalance = wallet
+    ? Math.max(0, v.remainingBalance - (confirmAmount - activeDiscount))
+    : Math.max(0, v.remainingBalance - (confirmAmount - activeDiscount));
 
   return (
     <div className="cashier-wrap">
@@ -193,6 +250,9 @@ export default function CashierVoucher() {
         <div className="muted">{wallet ? 'Wallet Balance' : 'Voucher Balance'}</div>
         <div className="balance-value">{formatMWK(v.remainingBalance)}</div>
         <div className="muted small">{v.code} · {v.status.replace('_', ' ')}</div>
+        {loyaltyInfo && loyaltyInfo.points > 0 && (
+          <div className="muted small">Loyalty: {loyaltyInfo.points} pts (≈ {formatMWK(loyaltyInfo.points * loyaltyInfo.mwkPerPoint)})</div>
+        )}
       </div>
 
       <div className="card">
@@ -201,6 +261,7 @@ export default function CashierVoucher() {
           <div><dt>Customer</dt><dd>{v.customer ? `${v.customer.name}${v.customer.phone ? ` · ${v.customer.phone}` : ''}` : '—'}</dd></div>
           <div><dt>Stores</dt><dd>{v.validStores?.length ? v.validStores.map((s) => s.name).join(', ') : 'All stores'}</dd></div>
           {v.restrictions?.notes && <div><dt>Notes</dt><dd>{v.restrictions.notes}</dd></div>}
+          {result?.requiresPin && <div><dt>Authorisation</dt><dd>Customer PIN required</dd></div>}
         </dl>
       </div>
 
@@ -208,6 +269,7 @@ export default function CashierVoucher() {
         <div className="card confirm-box">
           <p>You are about to redeem:</p>
           <p className="confirm-amount">{formatMWK(confirmAmount)}</p>
+          {activeDiscount > 0 && <p className="muted small">Points discount: −{formatMWK(activeDiscount)} ({activePoints} pts)</p>}
           <p>{wallet ? 'Wallet balance after debit:' : 'Voucher remaining after redemption:'}</p>
           <p className="confirm-amount">{formatMWK(afterBalance)}</p>
           <p className="muted small">POS: {posRef.trim()} · {displayStore}</p>
@@ -223,7 +285,7 @@ export default function CashierVoucher() {
         <form className="card" onSubmit={beginConfirm}>
           <div className="field">
             <label htmlFor="amount">Amount to Redeem</label>
-            <input id="amount" className="input cashier-input" type="number" min="0.01" max={v.remainingBalance} step="0.01" required
+            <input id="amount" className="input cashier-input" type="number" min="0.01" step="0.01" required
               placeholder="K____________" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </div>
           <div className="field">
@@ -231,6 +293,31 @@ export default function CashierVoucher() {
             <input id="posref" className="input cashier-input" required autoComplete="off"
               placeholder="______________" value={posRef} onChange={(e) => setPosRef(e.target.value)} />
           </div>
+          {loyaltyInfo && loyaltyInfo.points >= (loyaltyInfo.minRedeemPoints ?? 1) && (
+            <div className="field">
+              <label htmlFor="usepoints" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input id="usepoints" type="checkbox" checked={usePoints}
+                  onChange={(e) => { setUsePoints(e.target.checked); if (e.target.checked && !points) setPoints(String(loyaltyInfo.points)); }} />
+                Use loyalty points ({loyaltyInfo.points} pts ≈ {formatMWK(loyaltyInfo.points * loyaltyInfo.mwkPerPoint)})
+              </label>
+              {usePoints && (
+                <input id="points" className="input cashier-input" type="number" min={loyaltyInfo.minRedeemPoints} max={loyaltyInfo.points} step="1"
+                  placeholder={`Points (min ${loyaltyInfo.minRedeemPoints})`} value={points}
+                  onChange={(e) => setPoints(e.target.value)} />
+              )}
+              {usePoints && !!activeDiscount && (
+                <p className="muted small">Discount −{formatMWK(activeDiscount)} · {wallet ? 'wallet charged' : 'voucher charged'} {formatMWK(Math.max(0, confirmAmount - activeDiscount))}</p>
+              )}
+            </div>
+          )}
+          {result?.requiresPin && (
+            <div className="field">
+              <label htmlFor="pin">Customer PIN (6 digits)</label>
+              <input id="pin" className="input cashier-input" type="password" inputMode="numeric" maxLength={6} autoComplete="off"
+                placeholder="••••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} required />
+              <p className="muted small">Customer enters their PIN on this device to authorise.</p>
+            </div>
+          )}
           <div className="field">
             <label htmlFor="store">Store</label>
             {hasAssignedStore ? (

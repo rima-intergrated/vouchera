@@ -116,26 +116,40 @@ export const walletQr = asyncHandler(async (req, res) => {
 // POST /api/wallets/validate — till scan check (read-only, never moves money).
 export const validateWallet = asyncHandler(async (req, res) => {
   const code = String(req.body.code || '').trim().toUpperCase();
-  const customer = await Customer.findOne({ walletCode: code }).select('name phone walletBalance walletCode');
+  const customer = await Customer.findOne({ walletCode: code }).select('name phone walletBalance walletCode loyaltyPoints pinHash');
   if (!customer) return res.json({ valid: false, code, reason: 'NOT_FOUND', message: 'Wallet not found. Check the code and try again.' });
-  if (customer.walletBalance <= 0) {
+  const { getLoyaltyConfig, cashValueForPoints } = await import('../services/loyalty.service.js');
+  const cfg = await getLoyaltyConfig();
+  const loyalty = {
+    points: customer.loyaltyPoints || 0,
+    cashValue: cashValueForPoints(customer.loyaltyPoints || 0, cfg.mwkPerPoint),
+    minRedeemPoints: cfg.minRedeemPoints,
+    mwkPerPoint: cfg.mwkPerPoint,
+  };
+  if (customer.walletBalance <= 0 && (customer.loyaltyPoints || 0) <= 0) {
     return res.json({
       valid: false, code, reason: 'EMPTY',
-      message: 'This wallet has zero balance.',
+      message: 'This wallet has zero balance and no loyalty points.',
       wallet: { code: customer.walletCode, balance: 0, customer: customer.name },
+      requiresPin: true, pinSet: !!customer.pinHash, loyalty,
     });
   }
   res.json({
     valid: true,
     code: customer.walletCode,
     wallet: { code: customer.walletCode, balance: customer.walletBalance, customer: customer.name, phone: customer.phone ?? null },
+    requiresPin: true,
+    pinSet: !!customer.pinHash,
+    loyalty,
   });
 });
 
 // POST /api/wallets/debit — explicit till purchase from a wallet (cashiers).
+// The customer's 6-digit PIN authorises the debit; optional loyaltyPoints
+// spends points for a discount in the same authorisation.
 export const debitWalletHandler = asyncHandler(async (req, res) => {
   const storeId = req.body.storeId || req.user.store?._id || req.user.store || null;
-  const { replayed, txn, redemption, newBalance } = await debitWallet({
+  const { replayed, txn, redemption, newBalance, loyalty, earnedPoints } = await debitWallet({
     walletCode: req.body.walletCode,
     customerId: req.body.customerId,
     amount: req.body.amount,
@@ -144,16 +158,40 @@ export const debitWalletHandler = asyncHandler(async (req, res) => {
     actor: req.user,
     idempotencyKey: req.body.idempotencyKey,
     device: { ip: req.ip || '', userAgent: req.headers['user-agent'] || '' },
+    pin: req.body.pin,
+    loyaltyPoints: req.body.loyaltyPoints ?? 0,
   });
-  const customer = await Customer.findById(txn.customer).select('name walletCode');
+  const customer = txn
+    ? await Customer.findById(txn.customer).select('name walletCode')
+    : await Customer.findById(redemption?.customer).select('name walletCode');
   audit({
     actor: req.user,
     action: 'wallet.debit',
-    entity: 'WalletTransaction',
-    entityId: String(txn._id),
-    metadata: { code: customer?.walletCode, amount: txn.amount, reference: redemption?.redemptionReference },
+    entity: txn ? 'WalletTransaction' : 'VoucherRedemption',
+    entityId: String(txn?._id ?? redemption?._id ?? ''),
+    metadata: { code: customer?.walletCode, amount: txn?.amount ?? redemption?.amountRedeemed, reference: redemption?.redemptionReference },
     req,
   });
+  if (!txn) {
+    // Full-points payment — no wallet leg.
+    return res.status(replayed ? 200 : 201).json({
+      replayed,
+      redemption: {
+        id: String(redemption?._id ?? ''),
+        source: 'LOYALTY',
+        redemptionReference: redemption?.redemptionReference ?? '',
+        amountRedeemed: redemption?.amountRedeemed ?? 0,
+        posTransactionReference: redemption?.posTransactionReference ?? req.body.posTransactionReference,
+        redeemedAt: redemption?.redeemedAt ?? new Date(),
+      },
+      wallet: {
+        code: customer?.walletCode ?? null,
+        customer: customer?.name ?? null,
+        remainingBalance: newBalance ?? 0,
+      },
+      loyalty: loyalty ?? null,
+    });
+  }
   res.status(replayed ? 200 : 201).json({
     replayed,
     redemption: {
@@ -169,6 +207,8 @@ export const debitWalletHandler = asyncHandler(async (req, res) => {
       customer: customer?.name ?? null,
       remainingBalance: newBalance ?? txn.newBalance,
     },
+    ...(loyalty ? { loyalty } : {}),
+    ...(earnedPoints ? { earnedPoints } : {}),
   });
 });
 

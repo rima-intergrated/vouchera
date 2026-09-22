@@ -13,6 +13,7 @@ export default function CustomerDetails() {
   const [data, setData] = useState(null);
   const [ledger, setLedger] = useState([]);
   const [qr, setQr] = useState(null);
+  const [loyalty, setLoyalty] = useState(null);
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -37,6 +38,7 @@ export default function CustomerDetails() {
       setData(c);
       setLedger(l.items ?? []);
       setQr(q);
+      api.get(`/loyalty/transactions?customer=${id}&limit=10`).then(({ data }) => setLoyalty(data)).catch(() => {});
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load customer');
     } finally {
@@ -117,6 +119,7 @@ export default function CustomerDetails() {
         <div className="stat-card"><div className="stat-label">Wallet Balance</div><div className="stat-value" style={{ fontSize: 24 }}>{formatMWK(customer.walletBalance)}</div></div>
         <div className="stat-card"><div className="stat-label">Topped Up</div><div className="stat-value" style={{ fontSize: 24 }}>{formatMWK(stats.toppedUp)}</div></div>
         <div className="stat-card"><div className="stat-label">Spent</div><div className="stat-value" style={{ fontSize: 24 }}>{formatMWK(stats.spent)}</div></div>
+        <div className="stat-card"><div className="stat-label">Loyalty Points</div><div className="stat-value" style={{ fontSize: 24 }}>{stats.loyaltyPoints ?? 0} pts</div></div>
       </div>
 
       <div className="grid-2">
@@ -126,6 +129,8 @@ export default function CustomerDetails() {
             <div><dt>Phone</dt><dd>{customer.phone || '—'}</dd></div>
             <div><dt>Email</dt><dd>{customer.email || '—'}</dd></div>
             <div><dt>Wallet Code</dt><dd>{customer.walletCode || '—'}</dd></div>
+            <div><dt>Payment PIN</dt><dd>{customer.pinSet ? 'Set' : 'Not set'}</dd></div>
+            <div><dt>Loyalty</dt><dd>{stats.loyaltyPoints ?? 0} pts · earned {stats.loyaltyEarned ?? 0} · redeemed {stats.loyaltyRedeemed ?? 0}</dd></div>
             <div><dt>Notes</dt><dd>{customer.notes || '—'}</dd></div>
             <div><dt>Portal Login</dt><dd>{login ? `${login.email} (${login.isActive ? 'active' : 'disabled'})` : 'None'}</dd></div>
           </dl>
@@ -192,6 +197,29 @@ export default function CustomerDetails() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="card">
+        <h2>Loyalty Ledger</h2>
+        {!loyalty || loyalty.items.length === 0 ? (
+          <p className="muted">No points activity yet.</p>
+        ) : (
+          <table className="table">
+            <thead><tr><th>Date</th><th>Type</th><th>Points</th><th>Cash Value</th><th>Balance After</th><th>Store</th></tr></thead>
+            <tbody>
+              {loyalty.items.map((t) => (
+                <tr key={t.id}>
+                  <td>{new Date(t.createdAt).toLocaleString('en-GB')}</td>
+                  <td>{t.type}</td>
+                  <td>{t.points}</td>
+                  <td>{formatMWK(t.cashValue)}</td>
+                  <td>{t.newPoints} pts</td>
+                  <td>{t.store?.name ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div className="card">

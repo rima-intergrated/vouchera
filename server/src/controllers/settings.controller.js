@@ -26,6 +26,10 @@ export const updateSetting = asyncHandler(async (req, res) => {
     if (!Number.isInteger(value) || value < def.min || value > def.max) {
       throw ApiError.badRequest(`Value must be a whole number between ${def.min} and ${def.max}`);
     }
+  } else if (def.type === 'number') {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < def.min || value > def.max) {
+      throw ApiError.badRequest(`Value must be a number between ${def.min} and ${def.max}`);
+    }
   } else if (def.type === 'string') {
     if (typeof value !== 'string' || value.trim().length < def.min || value.length > def.max) {
       throw ApiError.badRequest(`Value must be ${def.min}–${def.max} characters`);

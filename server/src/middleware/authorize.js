@@ -45,6 +45,8 @@ export const PERMISSIONS = {
   // Customer wallets
   'wallets.topup': ['ADMIN', 'MANAGER'],
   'wallets.read': ['ADMIN', 'MANAGER', 'AUDITOR', 'CUSTOMER'],
+  // Loyalty program
+  'loyalty.read': ['ADMIN', 'MANAGER', 'AUDITOR', 'CUSTOMER'],
 };
 
 export const requirePermission = (...needed) => (req, res, next) => {

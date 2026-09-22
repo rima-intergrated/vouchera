@@ -12,24 +12,60 @@ export const listCustomers = asyncHandler(async (req, res) => {
   res.json({ customers });
 });
 
-export const getCustomer = asyncHandler(async (req, res) => {
-  const customer = await Customer.findById(req.params.id);
+// GET /api/customers/me — own account for the customer portal: balances,
+// loyalty + cash value + rates, and whether the till PIN is set.
+export const getMe = asyncHandler(async (req, res) => {
+  const customerId = req.user.customer?._id || req.user.customer || null;
+  if (!customerId) throw ApiError.forbidden('No customer account linked to this login');
+  const customer = await Customer.findById(customerId).select('+pinHash');
   if (!customer) throw ApiError.notFound('Customer not found');
-  const [flows, login] = await Promise.all([
+  const { getLoyaltyConfig, cashValueForPoints } = await import('../services/loyalty.service.js');
+  const cfg = await getLoyaltyConfig();
+  res.json({
+    customer: {
+      id: String(customer._id),
+      name: customer.name,
+      phone: customer.phone ?? null,
+      email: customer.email ?? null,
+      walletBalance: customer.walletBalance,
+      walletCode: customer.walletCode,
+      loyaltyPoints: customer.loyaltyPoints || 0,
+      loyaltyCashValue: cashValueForPoints(customer.loyaltyPoints || 0, cfg.mwkPerPoint),
+    },
+    pinSet: !!customer.pinHash,
+    pinSetAt: customer.pinSetAt ?? null,
+    rates: cfg,
+  });
+});
+
+export const getCustomer = asyncHandler(async (req, res) => {
+  const customer = await Customer.findById(req.params.id).select('+pinHash');
+  if (!customer) throw ApiError.notFound('Customer not found');
+  const [flows, loyaltyFlows, login] = await Promise.all([
     WalletTransaction.aggregate([
       { $match: { customer: customer._id } },
       { $group: { _id: '$type', total: { $sum: '$amount' }, count: { $sum: 1 } } },
     ]),
+    (await import('../models/LoyaltyTransaction.js')).default.aggregate([
+      { $match: { customer: customer._id } },
+      { $group: { _id: '$type', total: { $sum: '$points' }, count: { $sum: 1 } } },
+    ]),
     User.findOne({ customer: customer._id }).select('name email role isActive createdAt'),
   ]);
   const byType = Object.fromEntries(flows.map((f) => [f._id, f]));
+  const loyaltyByType = Object.fromEntries(loyaltyFlows.map((f) => [f._id, f]));
   const r2 = (n) => Math.round(Number(n) * 100) / 100;
+  const safe = customer.toObject();
+  delete safe.pinHash;
   res.json({
-    customer,
+    customer: { ...safe, pinSet: !!customer.pinHash },
     stats: {
       toppedUp: r2(byType.TOP_UP?.total ?? 0),
       spent: r2(byType.DEBIT?.total ?? 0),
       transactions: (byType.TOP_UP?.count ?? 0) + (byType.DEBIT?.count ?? 0),
+      loyaltyPoints: customer.loyaltyPoints || 0,
+      loyaltyEarned: loyaltyByType.EARN?.total ?? 0,
+      loyaltyRedeemed: loyaltyByType.REDEEM?.total ?? 0,
     },
     login: login
       ? { id: String(login._id), name: login.name, email: login.email, isActive: login.isActive }

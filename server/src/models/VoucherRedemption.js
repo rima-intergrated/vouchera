@@ -12,12 +12,14 @@ import mongoose from 'mongoose';
 // G4: wallet debits share this table (source WALLET) so till history,
 // reports and audit stay unified. For WALLET rows the voucher fields are
 // empty and the wallet/customer fields carry the identity instead.
+// LOYALTY rows record points-funded discounts (amountRedeemed = MWK value,
+// metadata.pointsUsed = points consumed).
 const isVoucherSource = function () {
-  return this.source !== 'WALLET';
+  return this.source !== 'WALLET' && this.source !== 'LOYALTY';
 };
 const redemptionSchema = new mongoose.Schema(
   {
-    source: { type: String, enum: ['VOUCHER', 'GIFT_CARD', 'WALLET'], default: 'VOUCHER', index: true },
+    source: { type: String, enum: ['VOUCHER', 'GIFT_CARD', 'WALLET', 'LOYALTY'], default: 'VOUCHER', index: true },
     voucher: { type: mongoose.Schema.Types.ObjectId, ref: 'Voucher', default: null, required: isVoucherSource, index: true },
     voucherCode: { type: String, uppercase: true, trim: true, default: undefined, required: isVoucherSource, index: true },
     customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },

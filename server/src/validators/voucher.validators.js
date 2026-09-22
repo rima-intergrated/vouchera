@@ -42,6 +42,10 @@ export const redeemVoucherValidators = [
   body('posTransactionReference').trim().notEmpty().withMessage('POS transaction reference is required'),
   body('storeId').optional().isMongoId().withMessage('Invalid store id'),
   body('idempotencyKey').optional().isUUID().withMessage('Invalid idempotency key'),
+  // Till PIN: required for customer-linked vouchers (enforced server-side),
+  // skipped for bearer/paper vouchers. Loyalty tender for linked accounts.
+  body('pin').optional().trim().matches(/^\d{6}$/).withMessage('Payment PIN must be exactly 6 digits'),
+  body('loyaltyPoints').optional().isInt({ min: 0 }).withMessage('Loyalty points must be a whole number'),
 ];
 
 export const listVoucherValidators = [

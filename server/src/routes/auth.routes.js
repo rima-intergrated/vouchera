@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { login, me, logout, createUser, listUsers, updateUser, acceptInvite, reinviteUser, forgotPassword, resetPassword, registerCustomer } from '../controllers/auth.controller.js';
+import { forgotPin, resetPin } from '../controllers/pin.controller.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireRole } from '../middleware/authorize.js';
 import { validate } from '../middleware/validate.js';
@@ -46,6 +47,21 @@ router.post(
   ],
   validate,
   resetPassword
+);
+router.post(
+  '/forgot-pin',
+  [body('email').isEmail().withMessage('Valid email required').normalizeEmail()],
+  validate,
+  forgotPin
+);
+router.post(
+  '/reset-pin',
+  [
+    body('token').trim().notEmpty().withMessage('Reset token is required'),
+    body('pin').matches(/^\d{6}$/).withMessage('PIN must be exactly 6 digits'),
+  ],
+  validate,
+  resetPin
 );
 
 // User management (ADMIN only) — mounted under /api/auth for Phase 1;

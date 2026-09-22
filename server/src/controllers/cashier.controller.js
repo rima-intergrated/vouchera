@@ -1,9 +1,12 @@
 import Voucher from '../models/Voucher.js';
 import VoucherRedemption from '../models/VoucherRedemption.js';
+import Customer from '../models/Customer.js';
 import Store from '../models/Store.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { audit, generateRedemptionReference, round2 } from '../utils/helpers.js';
+import { verifyCustomerPin } from '../services/pin.service.js';
+import { getLoyaltyConfig, cashValueForPoints, earnForSpend } from '../services/loyalty.service.js';
 
 const REDEEMABLE = ['ACTIVE', 'PARTIALLY_REDEEMED'];
 
@@ -61,7 +64,31 @@ export const validateVoucher = asyncHandler(async (req, res) => {
     });
   }
   audit({ actor: req.user, action: 'voucher.validate', entity: 'Voucher', entityId: String(voucher._id), metadata: { code }, req });
-  res.json({ valid: true, code: voucher.code, voucher: snapshot(voucher) });
+  // Linked (customer) vouchers need the holder's till PIN at redemption;
+  // bearer/paper vouchers skip PIN.
+  let pinSet = null;
+  let loyalty = null;
+  if (voucher.customer?._id || voucher.customer) {
+    const holder = await Customer.findById(voucher.customer?._id || voucher.customer).select('loyaltyPoints pinHash');
+    pinSet = !!holder?.pinHash;
+    if (holder) {
+      const cfg = await getLoyaltyConfig();
+      loyalty = {
+        points: holder.loyaltyPoints || 0,
+        cashValue: cashValueForPoints(holder.loyaltyPoints || 0, cfg.mwkPerPoint),
+        minRedeemPoints: cfg.minRedeemPoints,
+        mwkPerPoint: cfg.mwkPerPoint,
+      };
+    }
+  }
+  res.json({
+    valid: true,
+    code: voucher.code,
+    voucher: snapshot(voucher),
+    requiresPin: !!voucher.customer,
+    ...(pinSet !== null ? { pinSet } : {}),
+    ...(loyalty ? { loyalty } : {}),
+  });
 });
 
 function deviceMetadata(req) {
@@ -104,8 +131,40 @@ export const redeemVoucher = asyncHandler(async (req, res) => {
   if (!REDEEMABLE.includes(voucher.status)) {
     throw ApiError.conflict(REASONS[voucher.status] ?? 'Voucher cannot be redeemed');
   }
-  if (amount > voucher.remainingBalance) {
-    throw ApiError.badRequest(`Amount exceeds remaining balance (${voucher.remainingBalance})`);
+
+  // Customer-linked vouchers require the holder's 6-digit till PIN.
+  // Bearer/paper vouchers (no customer link) skip PIN authorisation.
+  let pinCustomer = null;
+  if (voucher.customer) {
+    pinCustomer = await Customer.findById(voucher.customer).select('+pinHash');
+    if (!pinCustomer) throw ApiError.notFound('Linked customer account not found');
+    await verifyCustomerPin(pinCustomer, req.body.pin);
+  }
+
+  // Optional loyalty tender (linked accounts only): points discount reduces
+  // the voucher charge. One PIN authorises both legs.
+  const wantPoints = Math.floor(Number(req.body.loyaltyPoints) || 0);
+  let pointsToUse = 0;
+  let pointsDiscount = 0;
+  if (wantPoints > 0) {
+    if (!voucher.customer || !pinCustomer) throw ApiError.badRequest('Loyalty points require a customer-linked voucher');
+    const cfg = await getLoyaltyConfig();
+    if (wantPoints < cfg.minRedeemPoints) throw ApiError.badRequest(`Minimum ${cfg.minRedeemPoints} points per redemption`);
+    if (wantPoints > (pinCustomer.loyaltyPoints || 0)) throw ApiError.badRequest(`Only ${pinCustomer.loyaltyPoints || 0} points available`);
+    const maxUsable = Math.floor(amount / cfg.mwkPerPoint);
+    pointsToUse = Math.min(wantPoints, maxUsable);
+    pointsDiscount = cashValueForPoints(pointsToUse, cfg.mwkPerPoint);
+  }
+  const charge = round2(amount - pointsDiscount);
+  if (charge < 0.01) {
+    throw ApiError.badRequest('Points cover the full bill — pay with wallet debit instead of voucher');
+  }
+  if (charge > voucher.remainingBalance) {
+    throw ApiError.badRequest(
+      pointsToUse
+        ? `Amount exceeds remaining balance after ${pointsDiscount} points discount (${voucher.remainingBalance})`
+        : `Amount exceeds remaining balance (${voucher.remainingBalance})`
+    );
   }
 
   const storeId = req.body.storeId || req.user.store?._id || req.user.store || null;
@@ -121,18 +180,18 @@ export const redeemVoucher = asyncHandler(async (req, res) => {
     {
       _id: voucher._id,
       status: { $in: REDEEMABLE },
-      remainingBalance: { $gte: amount },
+      remainingBalance: { $gte: charge },
       expiryDate: { $gte: now },
     },
     [
       {
         $set: {
           // $round keeps every stored value at exactly 2dp (MWK tambala).
-          remainingBalance: { $round: [{ $subtract: ['$remainingBalance', amount] }, 2] },
-          totalRedeemed: { $round: [{ $add: ['$totalRedeemed', amount] }, 2] },
+          remainingBalance: { $round: [{ $subtract: ['$remainingBalance', charge] }, 2] },
+          totalRedeemed: { $round: [{ $add: ['$totalRedeemed', charge] }, 2] },
           redemptionCount: { $add: ['$redemptionCount', 1] },
           status: {
-            $cond: [{ $eq: [{ $round: [{ $subtract: ['$remainingBalance', amount] }, 2] }, 0] }, 'FULLY_REDEEMED', 'PARTIALLY_REDEEMED'],
+            $cond: [{ $eq: [{ $round: [{ $subtract: ['$remainingBalance', charge] }, 2] }, 0] }, 'FULLY_REDEEMED', 'PARTIALLY_REDEEMED'],
           },
         },
       },
@@ -141,7 +200,7 @@ export const redeemVoucher = asyncHandler(async (req, res) => {
   );
   if (!updated) throw ApiError.conflict('Voucher changed during redemption — please re-scan and try again');
 
-  const previousBalance = round2(updated.remainingBalance + amount);
+  const previousBalance = round2(updated.remainingBalance + charge);
   // Reference prefix follows the source: GC for gift cards, VR otherwise.
   const refPrefix = voucher.type === 'GIFT_CARD' ? 'GC' : 'VR';
   let redemption = null;
@@ -153,14 +212,17 @@ export const redeemVoucher = asyncHandler(async (req, res) => {
         source: voucher.type === 'GIFT_CARD' ? 'GIFT_CARD' : 'VOUCHER',
         voucher: voucher._id,
         voucherCode: voucher.code,
-        amountRedeemed: amount,
+        amountRedeemed: charge,
         previousBalance,
         newBalance: updated.remainingBalance,
         cashier: req.user._id,
         store: store._id,
         posTransactionReference,
         redemptionReference: reference,
-        metadata: deviceMetadata(req),
+        metadata: {
+          ...deviceMetadata(req),
+          ...(pointsToUse ? { billTotal: amount, pointsUsed: pointsToUse, pointsDiscount } : {}),
+        },
         ...(idempotencyKey ? { idempotencyKey } : {}),
       });
     } catch (err) {
@@ -171,10 +233,10 @@ export const redeemVoucher = asyncHandler(async (req, res) => {
       await Voucher.findOneAndUpdate({ _id: voucher._id }, [
         {
           $set: {
-            remainingBalance: { $round: [{ $add: ['$remainingBalance', amount] }, 2] },
-            totalRedeemed: { $round: [{ $subtract: ['$totalRedeemed', amount] }, 2] },
+            remainingBalance: { $round: [{ $add: ['$remainingBalance', charge] }, 2] },
+            totalRedeemed: { $round: [{ $subtract: ['$totalRedeemed', charge] }, 2] },
             redemptionCount: { $subtract: ['$redemptionCount', 1] },
-            status: { $cond: [{ $eq: ['$totalRedeemed', amount] }, 'ACTIVE', 'PARTIALLY_REDEEMED'] },
+            status: { $cond: [{ $eq: ['$totalRedeemed', charge] }, 'ACTIVE', 'PARTIALLY_REDEEMED'] },
           },
         },
       ]);
@@ -191,13 +253,65 @@ export const redeemVoucher = asyncHandler(async (req, res) => {
     action: 'voucher.redeem',
     entity: 'VoucherRedemption',
     entityId: String(redemption._id),
-    metadata: { code, amount, reference, store: store.code, posTransactionReference },
+    metadata: { code, amount: charge, billTotal: amount, reference, store: store.code, posTransactionReference, ...(pointsToUse ? { pointsUsed: pointsToUse } : {}) },
     req,
   });
+
+  // Points leg of split tender (voucher charged first; on failure the voucher
+  // debit above is rolled back so no value disappears).
+  let loyalty = null;
+  if (pointsToUse > 0) {
+    try {
+      const { redeemPoints } = await import('../services/loyalty.service.js');
+      const r = await redeemPoints({
+        customer: { _id: pinCustomer._id, loyaltyPoints: pinCustomer.loyaltyPoints },
+        points: pointsToUse,
+        storeId: store._id,
+        actor: req.user,
+        idempotencyKey: idempotencyKey ? `${idempotencyKey}:loyalty` : undefined,
+      });
+      r.txn.redemption = redemption._id;
+      await r.txn.save().catch(() => {});
+      loyalty = { points: r.points, discount: r.discount };
+    } catch (err) {
+      await Voucher.findOneAndUpdate({ _id: voucher._id }, [
+        {
+          $set: {
+            remainingBalance: { $round: [{ $add: ['$remainingBalance', charge] }, 2] },
+            totalRedeemed: { $round: [{ $subtract: ['$totalRedeemed', charge] }, 2] },
+            redemptionCount: { $subtract: ['$redemptionCount', 1] },
+            status: { $cond: [{ $eq: ['$totalRedeemed', charge] }, 'ACTIVE', 'PARTIALLY_REDEEMED'] },
+          },
+        },
+      ]);
+      throw err;
+    }
+  }
+
+  // Auto-earn on the voucher-paid portion for linked accounts (best-effort).
+  let earnedPoints = 0;
+  if (voucher.customer) {
+    try {
+      const r = await earnForSpend({
+        customerId: voucher.customer,
+        amountMWK: charge,
+        storeId: store._id,
+        actor: req.user,
+        redemptionId: redemption._id,
+        idempotencyKey: idempotencyKey ? `${idempotencyKey}:earn` : undefined,
+      });
+      earnedPoints = r.earned || 0;
+    } catch (err) {
+      console.error('[loyalty] earn failed (redemption stands):', err.message);
+    }
+  }
+
   await redemption.populate([{ path: 'store', select: 'name code' }, { path: 'cashier', select: 'name email' }]);
   res.status(201).json({
     redemption: serializeRedemption(redemption),
     voucher: { code: voucher.code, remainingBalance: updated.remainingBalance, status: updated.status },
+    ...(loyalty ? { loyalty } : {}),
+    ...(earnedPoints ? { earnedPoints } : {}),
   });
 });
 
