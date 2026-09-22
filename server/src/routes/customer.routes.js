@@ -21,7 +21,9 @@ router.post(
   '/me/pin/change',
   requireAuth,
   [
-    body('currentPin').optional().trim(),
+    // Current PIN accepts 4–6 digits (legacy 6-digit PINs verify here once,
+    // then are replaced by a 4-digit PIN); the new PIN is 4 digits only.
+    body('currentPin').optional().trim().matches(/^\d{4,6}$/).withMessage('Current PIN must be 4 to 6 digits'),
     body('newPin').matches(/^\d{4}$/).withMessage('PIN must be exactly 4 digits'),
   ],
   validate,

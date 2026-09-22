@@ -21,7 +21,10 @@ export async function hashPin(pin) {
 
 // Verify a customer's till PIN. Enforces lockout: 5 bad attempts lock the
 // account for 15 minutes. Throws 423 when locked, 403 when no PIN set,
-// 401 on mismatch. Resets the counter on success.
+// 400 on mismatch. Resets the counter on success.
+// Deliberately no format check here: PINs created before the 4-digit switch
+// (6 digits) must still verify — format is enforced at creation (assertPinFormat)
+// and on the route validators instead.
 export async function verifyCustomerPin(customer, pin) {
   const fresh = customer.pinHash !== undefined
     ? customer

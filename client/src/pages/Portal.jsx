@@ -184,7 +184,11 @@ function PinPanel({ pinSet, onChanged }) {
     e.preventDefault();
     setMsg({ kind: '', text: '' });
     if (!/^\d{4}$/.test(next)) {
-      setMsg({ kind: 'error', text: 'PIN must be exactly 4 digits.' });
+      setMsg({ kind: 'error', text: 'New PIN must be exactly 4 digits.' });
+      return;
+    }
+    if (pinSet && !/^\d{4,6}$/.test(current)) {
+      setMsg({ kind: 'error', text: 'Enter your current PIN.' });
       return;
     }
     if (next !== confirm) {
@@ -216,15 +220,15 @@ function PinPanel({ pinSet, onChanged }) {
       <h2>{pinSet ? 'Change payment PIN' : 'Set payment PIN'}</h2>
       <p className="muted small">
         {pinSet
-          ? 'Enter your current 4-digit PIN, then choose a new one.'
+          ? 'Enter your current PIN, then choose a new 4-digit one. (PINs set before the 4-digit switch still work here once, then are replaced.)'
           : 'Choose a 4-digit PIN. You will enter it at the till to authorise payments from your account.'}
       </p>
       <form onSubmit={submit}>
         {pinSet && (
           <div className="field">
             <label htmlFor="cur-pin">Current PIN</label>
-            <input id="cur-pin" className="input cashier-input" type="password" inputMode="numeric" minLength={4} maxLength={4} autoComplete="off"
-              value={current} onChange={(e) => setCurrent(e.target.value.replace(/\D/g, '').slice(0, 4))} required />
+            <input id="cur-pin" className="input cashier-input" type="password" inputMode="numeric" minLength={4} maxLength={6} autoComplete="off"
+              value={current} onChange={(e) => setCurrent(e.target.value.replace(/\D/g, '').slice(0, 6))} required />
           </div>
         )}
         <div className="field">

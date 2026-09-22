@@ -44,7 +44,8 @@ export const redeemVoucherValidators = [
   body('idempotencyKey').optional().isUUID().withMessage('Invalid idempotency key'),
   // Till PIN: required for customer-linked vouchers (enforced server-side),
   // skipped for bearer/paper vouchers. Loyalty tender for linked accounts.
-  body('pin').optional().trim().matches(/^\d{4}$/).withMessage('Payment PIN must be exactly 4 digits'),
+  // Verification accepts 4–6 digits (legacy 6-digit PINs still authorise).
+  body('pin').optional().trim().matches(/^\d{4,6}$/).withMessage('Payment PIN must be 4 to 6 digits'),
   body('loyaltyPoints').optional().isInt({ min: 0 }).withMessage('Loyalty points must be a whole number'),
 ];
 
