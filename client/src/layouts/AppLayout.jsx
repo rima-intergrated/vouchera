@@ -7,6 +7,7 @@ const NAV = [
   { to: '/vouchers', label: 'Vouchers' },
   { to: '/campaigns', label: 'Campaigns' },
   { to: '/customers', label: 'Customers' },
+  { to: '/approvals', label: 'Approvals', roles: ['ADMIN'] },
   { to: '/stores', label: 'Stores' },
   { to: '/users', label: 'Users', roles: ['ADMIN'] },
   { to: '/redemptions', label: 'Redemptions' },

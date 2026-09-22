@@ -30,6 +30,7 @@ import {
   voucherDeliveries,
 } from '../controllers/delivery.controller.js';
 import { body } from 'express-validator';
+import { proofUpload } from '../middleware/upload.js';
 
 const router = Router();
 
@@ -51,6 +52,7 @@ router.post(
   '/:id/reload',
   requireAuth,
   requirePermission('vouchers.reload'),
+  proofUpload,
   [
     ...voucherIdParam,
     body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be at least 0.01'),

@@ -27,6 +27,7 @@ import Portal from './pages/Portal.jsx';
 import PortalHistory from './pages/PortalHistory.jsx';
 import Customers from './pages/Customers.jsx';
 import CustomerDetails from './pages/CustomerDetails.jsx';
+import Approvals from './pages/Approvals.jsx';
 import Users from './pages/Users.jsx';
 import Stores from './pages/Stores.jsx';
 import Settings from './pages/Settings.jsx';
@@ -75,6 +76,7 @@ export default function App() {
             <Route path="/campaigns/:id/edit" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']} fallback="/campaigns"><CampaignForm /></ProtectedRoute>} />
             <Route path="/customers" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><Customers /></ProtectedRoute>} />
             <Route path="/customers/:id" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><CustomerDetails /></ProtectedRoute>} />
+            <Route path="/approvals" element={<ProtectedRoute roles={['ADMIN']} fallback="/"><Approvals /></ProtectedRoute>} />
             <Route path="/stores" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><Stores /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute roles={['ADMIN']} fallback="/"><Users /></ProtectedRoute>} />
             <Route path="/redemptions" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><Redemptions /></ProtectedRoute>} />

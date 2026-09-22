@@ -1,8 +1,23 @@
 import app from './app.js';
 import { connectDB } from './config/db.js';
 import { env, validateEnv } from './config/env.js';
+import { registerEmailChannel } from './channels/email.channel.js';
+import { registerSmsChannel } from './channels/sms.channel.js';
 
 validateEnv({ strict: false });
+
+// Notification providers plug in here — each is a no-op without its env
+// config, so the API boots identically in dev and production.
+try {
+  registerEmailChannel();
+} catch (err) {
+  console.warn('[notify] email channel failed:', err.message);
+}
+try {
+  registerSmsChannel();
+} catch (err) {
+  console.warn('[notify] SMS channel failed:', err.message);
+}
 
 const start = async () => {
   if (!env.mongoUri) {

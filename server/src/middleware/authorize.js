@@ -45,6 +45,7 @@ export const PERMISSIONS = {
   // Customer wallets
   'wallets.topup': ['ADMIN', 'MANAGER'],
   'wallets.read': ['ADMIN', 'MANAGER', 'AUDITOR', 'CUSTOMER'],
+  'wallets.approve': ['ADMIN'],
   // Loyalty program
   'loyalty.read': ['ADMIN', 'MANAGER', 'AUDITOR', 'CUSTOMER'],
 };

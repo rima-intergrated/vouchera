@@ -15,6 +15,18 @@ export const env = {
   corsOrigin: required('CORS_ORIGIN', 'http://localhost:5173'),
   clientUrl: required('CLIENT_URL', required('CORS_ORIGIN', 'http://localhost:5173')),
   nodeEnv: required('NODE_ENV', 'development'),
+  // Free email via any SMTP provider (Gmail app password, Brevo, …). When
+  // unset, email delivery attempts are logged as unconfigured — nothing breaks.
+  smtpHost: required('SMTP_HOST', ''),
+  smtpPort: parseInt(required('SMTP_PORT', '587'), 10),
+  smtpUser: required('SMTP_USER', ''),
+  smtpPass: required('SMTP_PASS', ''),
+  smtpFrom: required('SMTP_FROM', required('SMTP_USER', 'Vouchera <no-reply@localhost>')),
+  // Africa's Talking SMS (pay-as-you-go; sandbox works for testing). When
+  // unset, SMS attempts are logged as unconfigured.
+  atUsername: required('AT_USERNAME', ''),
+  atApiKey: required('AT_API_KEY', ''),
+  atSender: required('AT_SENDER', ''),
 };
 
 export function validateEnv({ strict = false } = {}) {

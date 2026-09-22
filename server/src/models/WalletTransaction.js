@@ -18,6 +18,14 @@ const txnSchema = new mongoose.Schema(
     // Payment proof (transfer ref / receipt no). Unique when present so a
     // transfer can never be credited twice.
     paymentReference: { type: String, trim: true, default: undefined },
+    // Proof of payment for TRANSFER credits (bytes in GridFS; served via an
+    // authenticated download, never a public URL).
+    proof: {
+      fileId: { type: mongoose.Schema.Types.ObjectId, default: undefined },
+      filename: { type: String, default: undefined },
+      mimetype: { type: String, default: undefined },
+      size: { type: Number, default: undefined },
+    },
     target: { type: String, enum: WALLET_TXN_TARGETS, default: 'WALLET' },
     voucher: { type: mongoose.Schema.Types.ObjectId, ref: 'Voucher', default: null },
     store: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', default: null },

@@ -15,8 +15,9 @@ import { getLoyaltyConfig, cashValueForPoints, earnForSpend } from './loyalty.se
 // ---------------------------------------------------------------------------
 
 // Credit a customer wallet after verified payment (cash at till or transfer
-// confirmed by admin). TRANSFER always requires a payment reference.
-export async function creditWallet({ customerId, amount, method, paymentReference = null, storeId = null, actor = null, idempotencyKey = undefined }) {
+// confirmed by admin). TRANSFER always requires a payment reference AND a
+// proof-of-payment attachment (JPG/PNG/PDF metadata recorded on the txn).
+export async function creditWallet({ customerId, amount, method, paymentReference = null, proof = null, storeId = null, actor = null, idempotencyKey = undefined }) {
   const value = round2(amount);
   if (!Number.isFinite(value) || value < 0.01) throw ApiError.badRequest('Top-up amount must be at least 0.01');
   if (!['CASH', 'TRANSFER'].includes(method)) throw ApiError.badRequest('Method must be CASH or TRANSFER');
@@ -49,6 +50,7 @@ export async function creditWallet({ customerId, amount, method, paymentReferenc
       newBalance: round2(previousBalance + value),
       method,
       paymentReference: ref || undefined,
+      ...(proof ? { proof } : {}),
       target: 'WALLET',
       store: storeId,
       performedBy: actor?._id ?? null,
@@ -68,7 +70,7 @@ export async function creditWallet({ customerId, amount, method, paymentReferenc
 // Reload a gift card: atomically increase its balance and record the funding
 // on the shared wallet ledger (target GIFT_CARD). A fully spent card becomes
 // spendable again (status back to ACTIVE); lifetime totalRedeemed is kept.
-export async function reloadGiftCard({ voucherId, amount, method, paymentReference = null, storeId = null, actor = null, idempotencyKey = undefined }) {
+export async function reloadGiftCard({ voucherId, amount, method, paymentReference = null, proof = null, storeId = null, actor = null, idempotencyKey = undefined }) {
   const value = round2(amount);
   if (!Number.isFinite(value) || value < 0.01) throw ApiError.badRequest('Reload amount must be at least 0.01');
   if (!['CASH', 'TRANSFER'].includes(method)) throw ApiError.badRequest('Method must be CASH or TRANSFER');
@@ -112,6 +114,7 @@ export async function reloadGiftCard({ voucherId, amount, method, paymentReferen
       newBalance: round2(previousBalance + value),
       method,
       paymentReference: ref || undefined,
+      ...(proof ? { proof } : {}),
       target: 'GIFT_CARD',
       voucher: voucher._id,
       store: storeId,

@@ -9,6 +9,10 @@ export const KNOWN_SETTINGS = {
   'loyalty.pointsPer100MWK': { type: 'number', min: 0, max: 1000, default: 1, description: 'Points earned per MWK 100 spent (0 disables earning)' },
   'loyalty.mwkPerPoint': { type: 'number', min: 0.01, max: 10000, default: 1, description: 'Cash value (MWK) of one loyalty point when redeemed at the till' },
   'loyalty.minRedeemPoints': { type: 'integer', min: 1, max: 1000000, default: 100, description: 'Minimum points per redemption at the till' },
+  // Top-up maker-checker: credits at/above this MWK amount entered by
+  // non-admin staff wait for ADMIN approval instead of applying instantly.
+  // 0 disables the gate (everything credits immediately).
+  'topup.approvalThresholdMWK': { type: 'number', min: 0, max: 100000000, default: 0, description: 'Top-ups at/above this amount need admin approval (0 = off)' },
 };
 
 const settingSchema = new mongoose.Schema(

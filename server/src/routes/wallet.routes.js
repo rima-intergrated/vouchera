@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { body, query } from 'express-validator';
-import { topUpWallet, listWalletTransactions, walletQr, validateWallet, debitWalletHandler, myVouchers } from '../controllers/wallet.controller.js';
+import { body, param, query } from 'express-validator';
+import { topUpWallet, listWalletTransactions, walletQr, validateWallet, debitWalletHandler, myVouchers, downloadProof, listTopUpApprovals, approveTopUpRequest, rejectTopUpRequest, approvalProof } from '../controllers/wallet.controller.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { sensitiveLimiter } from '../middleware/rateLimits.js';
+import { proofUpload } from '../middleware/upload.js';
 import { validate } from '../middleware/validate.js';
 
 const router = Router();
@@ -21,6 +22,7 @@ router.post(
   '/topup',
   requireAuth,
   requirePermission('wallets.topup'),
+  proofUpload,
   [
     body('customerId').isMongoId().withMessage('Invalid customer id'),
     body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be at least 0.01'),
@@ -44,6 +46,56 @@ router.get(
   ],
   validate,
   listWalletTransactions
+);
+
+router.get(
+  '/transactions/:id/proof',
+  requireAuth,
+  requirePermission('wallets.read'),
+  [param('id').isMongoId().withMessage('Invalid transaction id')],
+  validate,
+  downloadProof
+);
+
+// Maker-checker approvals (ADMIN only) — literal paths before any ':id'.
+router.get(
+  '/approvals',
+  requireAuth,
+  requirePermission('wallets.approve'),
+  [
+    query('status').optional().isIn(['PENDING', 'APPROVED', 'REJECTED']).withMessage('Invalid status'),
+    query('page').optional().isInt({ min: 1 }).withMessage('Invalid page'),
+    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Invalid limit'),
+  ],
+  validate,
+  listTopUpApprovals
+);
+router.post(
+  '/approvals/:id/approve',
+  requireAuth,
+  requirePermission('wallets.approve'),
+  [param('id').isMongoId().withMessage('Invalid request id')],
+  validate,
+  approveTopUpRequest
+);
+router.post(
+  '/approvals/:id/reject',
+  requireAuth,
+  requirePermission('wallets.approve'),
+  [
+    param('id').isMongoId().withMessage('Invalid request id'),
+    body('note').optional().trim().isLength({ max: 500 }).withMessage('Note too long'),
+  ],
+  validate,
+  rejectTopUpRequest
+);
+router.get(
+  '/approvals/:id/proof',
+  requireAuth,
+  requirePermission('wallets.approve'),
+  [param('id').isMongoId().withMessage('Invalid request id')],
+  validate,
+  approvalProof
 );
 
 // Till scan check (read-only) — same abuse limiter as voucher validation.

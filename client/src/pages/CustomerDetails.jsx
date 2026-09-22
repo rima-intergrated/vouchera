@@ -19,12 +19,14 @@ export default function CustomerDetails() {
   const [error, setError] = useState('');
 
   const [topup, setTopup] = useState({ amount: '', method: 'CASH', reference: '', storeId: '' });
+  const [proofFile, setProofFile] = useState(null);
   const [topupBusy, setTopupBusy] = useState(false);
   const [topupMsg, setTopupMsg] = useState({ kind: '', text: '' });
 
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginMsg, setLoginMsg] = useState({ kind: '', text: '' });
+  const [threshold, setThreshold] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,6 +51,10 @@ export default function CustomerDetails() {
   useEffect(() => {
     load();
     api.get('/stores?active=true').then(({ data }) => setStores(data.stores ?? [])).catch(() => {});
+    api.get('/settings').then(({ data }) => {
+      const row = (data.settings ?? []).find((s) => s.key === 'topup.approvalThresholdMWK');
+      setThreshold(Number(row?.value ?? 0));
+    }).catch(() => {});
   }, [load]);
 
   const submitTopup = async (e) => {
@@ -56,21 +62,38 @@ export default function CustomerDetails() {
     setTopupBusy(true);
     setTopupMsg({ kind: '', text: '' });
     try {
-      const { data } = await api.post('/wallets/topup', {
-        customerId: id,
-        amount: Number(topup.amount),
-        method: topup.method,
-        ...(topup.reference.trim() ? { paymentReference: topup.reference.trim() } : {}),
-        ...(topup.storeId ? { storeId: topup.storeId } : {}),
-        idempotencyKey: crypto.randomUUID(),
-      });
-      setTopupMsg({ kind: 'ok', text: data.replayed ? 'Already recorded.' : `Credited ${formatMWK(data.transaction.amount)}. New balance: ${formatMWK(data.walletBalance)}.` });
+      const form = new FormData();
+      form.append('customerId', id);
+      form.append('amount', topup.amount);
+      form.append('method', topup.method);
+      if (topup.reference.trim()) form.append('paymentReference', topup.reference.trim());
+      if (topup.storeId) form.append('storeId', topup.storeId);
+      form.append('idempotencyKey', crypto.randomUUID());
+      if (topup.method === 'TRANSFER' && proofFile) form.append('proof', proofFile);
+      const { data } = await api.post('/wallets/topup', form);
+      if (data.pending) {
+        setTopupMsg({ kind: 'ok', text: `Sent for admin approval — no money moved yet. Request for ${formatMWK(data.request.amount)} is pending.` });
+      } else {
+        setTopupMsg({ kind: 'ok', text: data.replayed ? 'Already recorded.' : `Credited ${formatMWK(data.transaction.amount)}. New balance: ${formatMWK(data.walletBalance)}.` });
+      }
       setTopup({ amount: '', method: 'CASH', reference: '', storeId: '' });
+      setProofFile(null);
       load();
     } catch (err) {
       setTopupMsg({ kind: 'error', text: err.response?.data?.error || 'Top-up failed.' });
     } finally {
       setTopupBusy(false);
+    }
+  };
+
+  const downloadProof = async (txnId) => {
+    try {
+      const { data } = await api.get(`/wallets/transactions/${txnId}/proof`, { responseType: 'blob' });
+      const url = URL.createObjectURL(data);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      setTopupMsg({ kind: 'error', text: 'Could not open the proof of payment.' });
     }
   };
 
@@ -146,6 +169,9 @@ export default function CustomerDetails() {
           {canManage && (
             <div className="card">
               <h2>Top Up Wallet</h2>
+              {threshold > 0 && user?.role !== 'ADMIN' && Number(topup.amount) >= threshold && (
+                <p className="muted small">At or above {formatMWK(threshold)} this will be sent for admin approval instead of crediting immediately.</p>
+              )}
               <form onSubmit={submitTopup}>
                 <div className="field">
                   <label>Amount (MWK)<input className="input" type="number" min="0.01" step="0.01" required value={topup.amount} onChange={(e) => setTopup({ ...topup, amount: e.target.value })} /></label>
@@ -167,6 +193,15 @@ export default function CustomerDetails() {
                 <div className="field">
                   <label>Payment Reference{topup.method === 'TRANSFER' ? ' (required)' : ''}<input className="input" value={topup.reference} onChange={(e) => setTopup({ ...topup, reference: e.target.value })} required={topup.method === 'TRANSFER'} /></label>
                 </div>
+                {topup.method === 'TRANSFER' && (
+                  <div className="field">
+                    <label>Proof of Payment (JPG/PNG/PDF, max 5MB, required)
+                      <input className="input" type="file" accept=".jpg,.jpeg,.png,.pdf" required
+                        onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} />
+                    </label>
+                    {proofFile && <p className="muted small">{proofFile.name} · {(proofFile.size / 1024).toFixed(0)} KB</p>}
+                  </div>
+                )}
                 {topupMsg.text && <p className={topupMsg.kind === 'error' ? 'error' : 'muted'}>{topupMsg.text}</p>}
                 <button className="btn" type="submit" disabled={topupBusy} style={{ width: '100%' }}>
                   {topupBusy ? 'Processing…' : 'Credit Wallet'}
@@ -228,7 +263,7 @@ export default function CustomerDetails() {
           <p className="muted">No transactions yet.</p>
         ) : (
           <table className="table">
-            <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Balance After</th><th>Method</th><th>Reference</th><th>Store</th></tr></thead>
+            <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Balance After</th><th>Method</th><th>Reference</th><th>Proof</th><th>Store</th></tr></thead>
             <tbody>
               {ledger.map((t) => (
                 <tr key={t.id}>
@@ -238,6 +273,7 @@ export default function CustomerDetails() {
                   <td>{formatMWK(t.newBalance)}</td>
                   <td>{t.method}</td>
                   <td>{t.paymentReference || '—'}</td>
+                  <td>{t.hasProof ? <button className="btn secondary" onClick={() => downloadProof(t.id)}>View</button> : '—'}</td>
                   <td>{t.store?.name ?? '—'}</td>
                 </tr>
               ))}
