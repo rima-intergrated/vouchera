@@ -105,6 +105,10 @@ export const listRedemptions = asyncHandler(async (req, res) => {
               previousBalance: 1,
               newBalance: 1,
               posTransactionReference: 1,
+              billTotal: 1,
+              tenderMethod: 1,
+              tenderAmount: 1,
+              tenderReference: 1,
               redeemedAt: 1,
               status: '$_voucher.status',
               store: { name: '$_store.name', code: '$_store.code' },
@@ -123,6 +127,63 @@ export const listRedemptions = asyncHandler(async (req, res) => {
   const total = result?.total?.[0]?.count ?? 0;
   res.json({ items, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
 });
+
+// GET /api/redemptions/:id/receipt — full receipt for one redemption.
+// Scoped like history: ADMIN/AUDITOR all, MANAGER own store, CASHIER own
+// records, CUSTOMER own customer records. Powers clickable receipts.
+export const redemptionReceipt = asyncHandler(async (req, res) => {
+  const r = await VoucherRedemption.findById(req.params.id)
+    .populate('store', 'name code')
+    .populate('cashier', 'name email')
+    .populate('customer', 'name phone')
+    .populate('voucher', 'code type')
+    .lean();
+  if (!r) throw ApiError.notFound('Receipt not found');
+  const role = req.user.role;
+  const me = String(req.user._id);
+  if (role === 'CASHIER' && String(r.cashier?._id) !== me) throw ApiError.forbidden('Insufficient permissions');
+  if (role === 'CUSTOMER') {
+    const own = String(req.user.customer?._id || req.user.customer || '');
+    if (!r.customer || String(r.customer._id) !== own) throw ApiError.forbidden('Insufficient permissions');
+  }
+  if (role === 'MANAGER') {
+    const storeId = String(req.user.store?._id || req.user.store || '');
+    if (String(r.store?._id) !== storeId) throw ApiError.forbidden('Insufficient permissions');
+  }
+  res.json({ receipt: serializeReceipt(r) });
+});
+
+export function serializeReceipt(r) {
+  const stored = r.amountRedeemed ?? 0;
+  const lines = [{ label: labelForSource(r), amount: stored }];
+  if ((r.tenderAmount ?? 0) > 0) lines.push({ label: `${r.tenderMethod} tender${r.tenderReference ? ` (${r.tenderReference})` : ''}`, amount: r.tenderAmount });
+  const total = r.billTotal ?? (stored + (r.tenderAmount ?? 0));
+  return {
+    kind: 'REDEMPTION',
+    id: String(r._id),
+    reference: r.redemptionReference,
+    source: r.source ?? 'VOUCHER',
+    date: r.redeemedAt,
+    store: r.store ? { name: r.store.name, code: r.store.code } : null,
+    cashier: r.cashier ? { name: r.cashier.name, email: r.cashier.email } : null,
+    customer: r.customer ? { name: r.customer.name, phone: r.customer.phone ?? null } : null,
+    code: r.voucherCode ?? r.walletCode ?? r.voucher?.code ?? null,
+    posTransactionReference: r.posTransactionReference,
+    lines,
+    total,
+    previousBalance: r.previousBalance,
+    newBalance: r.newBalance,
+    pointsUsed: r.metadata?.pointsUsed ?? null,
+    pointsDiscount: r.metadata?.pointsDiscount ?? null,
+  };
+}
+
+function labelForSource(r) {
+  if (r.source === 'WALLET') return 'Wallet debit';
+  if (r.source === 'LOYALTY') return `Loyalty points (${r.metadata?.pointsUsed ?? ''} pts)`;
+  if (r.source === 'GIFT_CARD') return 'Gift card';
+  return 'Voucher';
+}
 
 // GET /api/redemptions/voucher/:voucherId — per-voucher history for the detail page.
 export const voucherRedemptions = asyncHandler(async (req, res) => {

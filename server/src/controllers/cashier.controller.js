@@ -4,7 +4,7 @@ import Customer from '../models/Customer.js';
 import Store from '../models/Store.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { audit, generateRedemptionReference, round2 } from '../utils/helpers.js';
+import { audit, generateRedemptionReference, round2, parseExternalTender } from '../utils/helpers.js';
 import { verifyCustomerPin } from '../services/pin.service.js';
 import { getLoyaltyConfig, cashValueForPoints, earnForSpend } from '../services/loyalty.service.js';
 
@@ -159,6 +159,11 @@ export const redeemVoucher = asyncHandler(async (req, res) => {
   if (charge < 0.01) {
     throw ApiError.badRequest('Points cover the full bill — pay with wallet debit instead of voucher');
   }
+  // External tender validates against the voucher leg before anything moves.
+  const tenderSplit = parseExternalTender(
+    { billTotal: req.body.billTotal, tenderMethod: req.body.tenderMethod, tenderAmount: req.body.tenderAmount, tenderReference: req.body.tenderReference },
+    charge
+  );
   if (charge > voucher.remainingBalance) {
     throw ApiError.badRequest(
       pointsToUse
@@ -223,6 +228,10 @@ export const redeemVoucher = asyncHandler(async (req, res) => {
           ...deviceMetadata(req),
           ...(pointsToUse ? { billTotal: amount, pointsUsed: pointsToUse, pointsDiscount } : {}),
         },
+        billTotal: tenderSplit.billTotal,
+        tenderMethod: tenderSplit.tenderMethod,
+        tenderAmount: tenderSplit.tenderAmount,
+        tenderReference: tenderSplit.tenderReference,
         ...(idempotencyKey ? { idempotencyKey } : {}),
       });
     } catch (err) {
@@ -330,6 +339,10 @@ function serializeRedemption(r) {
     cashier: r.cashier ? { name: r.cashier.name, email: r.cashier.email } : null,
     posTransactionReference: r.posTransactionReference,
     redeemedAt: r.redeemedAt,
+    billTotal: r.billTotal ?? null,
+    tenderMethod: r.tenderMethod ?? 'NONE',
+    tenderAmount: r.tenderAmount ?? 0,
+    tenderReference: r.tenderReference ?? null,
   };
 }
 
@@ -355,6 +368,9 @@ export const myRedemptions = asyncHandler(async (req, res) => {
       voucherCode: r.voucherCode ?? r.walletCode ?? null,
       amountRedeemed: r.amountRedeemed,
       newBalance: r.newBalance,
+      billTotal: r.billTotal ?? null,
+      tenderMethod: r.tenderMethod ?? 'NONE',
+      tenderAmount: r.tenderAmount ?? 0,
       store: r.store ? { name: r.store.name, code: r.store.code } : null,
       posTransactionReference: r.posTransactionReference,
       redeemedAt: r.redeemedAt,

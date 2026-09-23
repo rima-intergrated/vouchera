@@ -83,6 +83,7 @@ const run = async () => {
   const { default: LoyaltyTransaction } = await import('../models/LoyaltyTransaction.js');
   const { default: WalletTransaction } = await import('../models/WalletTransaction.js');
   const { default: TopUpRequest } = await import('../models/TopUpRequest.js');
+  const { default: Shift } = await import('../models/Shift.js');
   await Promise.all([
     Store.syncIndexes(),
     User.syncIndexes(),
@@ -95,6 +96,7 @@ const run = async () => {
     LoyaltyTransaction.syncIndexes(),
     WalletTransaction.syncIndexes(),
     TopUpRequest.syncIndexes(),
+    Shift.syncIndexes(),
   ]);
   console.log('[seed] indexes synced for all models');
   process.exit(0);

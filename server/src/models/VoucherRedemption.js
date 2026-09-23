@@ -27,6 +27,14 @@ const redemptionSchema = new mongoose.Schema(
     amountRedeemed: { type: Number, required: true, min: 0.01 },
     previousBalance: { type: Number, required: true, min: 0 },
     newBalance: { type: Number, required: true, min: 0 },
+    // Till tender split: amountRedeemed is the stored-value leg; when outside
+    // money completed the sale, billTotal + tender* record the whole receipt
+    // so every sale self-balances (stored + external = bill). NONE = the
+    // stored value covered the bill (or the bill is unknown to Vouchera).
+    billTotal: { type: Number, default: null, min: 0 },
+    tenderMethod: { type: String, enum: ['NONE', 'CASH', 'VISA'], default: 'NONE', index: true },
+    tenderAmount: { type: Number, default: 0, min: 0 },
+    tenderReference: { type: String, trim: true, default: undefined },
     cashier: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     store: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', required: true, index: true },
     posTransactionReference: { type: String, required: true, trim: true },

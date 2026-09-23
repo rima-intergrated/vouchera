@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
-import { topUpWallet, listWalletTransactions, walletQr, validateWallet, debitWalletHandler, myVouchers, downloadProof, listTopUpApprovals, approveTopUpRequest, rejectTopUpRequest, approvalProof } from '../controllers/wallet.controller.js';
+import { topUpWallet, listWalletTransactions, walletQr, validateWallet, debitWalletHandler, myVouchers, downloadProof, transactionReceipt, listTopUpApprovals, approveTopUpRequest, rejectTopUpRequest, approvalProof } from '../controllers/wallet.controller.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { sensitiveLimiter } from '../middleware/rateLimits.js';
@@ -55,6 +55,14 @@ router.get(
   [param('id').isMongoId().withMessage('Invalid transaction id')],
   validate,
   downloadProof
+);
+router.get(
+  '/transactions/:id/receipt',
+  requireAuth,
+  requirePermission('wallets.read'),
+  [param('id').isMongoId().withMessage('Invalid transaction id')],
+  validate,
+  transactionReceipt
 );
 
 // Maker-checker approvals (ADMIN only) — literal paths before any ':id'.
@@ -126,6 +134,10 @@ router.post(
     // switch still authorise; every newly set PIN is exactly 4 digits.
     body('pin').trim().matches(/^\d{4,6}$/).withMessage('Payment PIN must be 4 to 6 digits'),
     body('loyaltyPoints').optional().isInt({ min: 0 }).withMessage('Loyalty points must be a whole number'),
+    body('billTotal').optional().isFloat({ min: 0.01 }).withMessage('Bill total must be at least 0.01'),
+    body('tenderMethod').optional().isIn(['CASH', 'VISA']).withMessage('Tender method must be CASH or VISA'),
+    body('tenderAmount').optional().isFloat({ min: 0 }).withMessage('Tender amount cannot be negative'),
+    body('tenderReference').optional().trim().isLength({ max: 120 }).withMessage('Tender reference too long'),
   ],
   validate,
   debitWalletHandler

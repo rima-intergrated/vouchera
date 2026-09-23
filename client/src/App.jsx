@@ -30,6 +30,7 @@ import PortalHistory from './pages/PortalHistory.jsx';
 import Customers from './pages/Customers.jsx';
 import CustomerDetails from './pages/CustomerDetails.jsx';
 import Approvals from './pages/Approvals.jsx';
+import Shifts from './pages/Shifts.jsx';
 import Users from './pages/Users.jsx';
 import Stores from './pages/Stores.jsx';
 import Settings from './pages/Settings.jsx';
@@ -80,6 +81,7 @@ export default function App() {
             <Route path="/customers" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><Customers /></ProtectedRoute>} />
             <Route path="/customers/:id" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><CustomerDetails /></ProtectedRoute>} />
             <Route path="/approvals" element={<ProtectedRoute roles={['ADMIN']} fallback="/"><Approvals /></ProtectedRoute>} />
+            <Route path="/shifts" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><Shifts /></ProtectedRoute>} />
             <Route path="/security" element={<ProtectedRoute roles={['ADMIN', 'MANAGER']} fallback="/"><Security /></ProtectedRoute>} />
             <Route path="/stores" element={<ProtectedRoute roles={STAFF} fallback="/cashier"><Stores /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute roles={['ADMIN']} fallback="/"><Users /></ProtectedRoute>} />

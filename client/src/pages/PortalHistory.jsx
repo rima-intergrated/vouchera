@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api.js';
+import ReceiptModal from '../components/ReceiptModal.jsx';
 import { formatMWK } from '../utils/format.js';
 
 export default function PortalHistory() {
@@ -8,6 +9,7 @@ export default function PortalHistory() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [receiptId, setReceiptId] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,7 +48,7 @@ export default function PortalHistory() {
             <div className="card"><p className="muted">No transactions yet.</p></div>
           ) : (
             data.items.map((t) => (
-              <div className="card history-item" key={t.id}>
+              <div className="card history-item clickable" key={t.id} onClick={() => setReceiptId(t.id)} title="Open receipt">
                 <strong>{t.type === 'TOP_UP' ? '+' : '−'}{formatMWK(t.amount)}</strong>{' '}
                 {t.type === 'TOP_UP' ? `Top-up (${t.method}${t.paymentReference ? ` · ${t.paymentReference}` : ''})` : 'Purchase'}
                 <div className="muted small">
@@ -55,6 +57,9 @@ export default function PortalHistory() {
                 </div>
               </div>
             ))
+          )}
+          {receiptId && (
+            <ReceiptModal url={`/wallets/transactions/${receiptId}/receipt`} title="Receipt" onClose={() => setReceiptId(null)} />
           )}
           <div className="pagination">
             <button className="btn secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</button>

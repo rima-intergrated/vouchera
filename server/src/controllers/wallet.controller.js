@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import Customer from '../models/Customer.js';
 import Voucher from '../models/Voucher.js';
 import WalletTransaction from '../models/WalletTransaction.js';
+import VoucherRedemption from '../models/VoucherRedemption.js';
 import TopUpRequest from '../models/TopUpRequest.js';
 import Setting from '../models/Setting.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -241,6 +242,12 @@ export const debitWalletHandler = asyncHandler(async (req, res) => {
     device: { ip: req.ip || '', userAgent: req.headers['user-agent'] || '' },
     pin: req.body.pin,
     loyaltyPoints: req.body.loyaltyPoints ?? 0,
+    tender: {
+      billTotal: req.body.billTotal,
+      tenderMethod: req.body.tenderMethod,
+      tenderAmount: req.body.tenderAmount,
+      tenderReference: req.body.tenderReference,
+    },
   });
   const customer = txn
     ? await Customer.findById(txn.customer).select('name walletCode')
@@ -264,6 +271,10 @@ export const debitWalletHandler = asyncHandler(async (req, res) => {
         amountRedeemed: redemption?.amountRedeemed ?? 0,
         posTransactionReference: redemption?.posTransactionReference ?? req.body.posTransactionReference,
         redeemedAt: redemption?.redeemedAt ?? new Date(),
+        billTotal: redemption?.billTotal ?? null,
+        tenderMethod: redemption?.tenderMethod ?? 'NONE',
+        tenderAmount: redemption?.tenderAmount ?? 0,
+        tenderReference: redemption?.tenderReference ?? null,
       },
       wallet: {
         code: customer?.walletCode ?? null,
@@ -282,6 +293,10 @@ export const debitWalletHandler = asyncHandler(async (req, res) => {
       amountRedeemed: txn.amount,
       posTransactionReference: redemption?.posTransactionReference ?? req.body.posTransactionReference,
       redeemedAt: redemption?.redeemedAt ?? txn.createdAt,
+      billTotal: redemption?.billTotal ?? null,
+      tenderMethod: redemption?.tenderMethod ?? 'NONE',
+      tenderAmount: redemption?.tenderAmount ?? 0,
+      tenderReference: redemption?.tenderReference ?? null,
     },
     wallet: {
       code: customer?.walletCode ?? null,
@@ -368,6 +383,62 @@ export const downloadProof = asyncHandler(async (req, res) => {
   if (!(await streamProof(txn.proof.fileId, txn.proof.mimetype, res))) {
     throw ApiError.notFound('Proof file is missing from storage');
   }
+});
+
+// GET /api/wallets/transactions/:id/receipt — receipt for one ledger entry.
+// DEBIT entries resolve to their linked redemption receipt; TOP_UP entries
+// return a credit slip. CUSTOMER role is forced to their own account.
+export const transactionReceipt = asyncHandler(async (req, res) => {
+  const txn = await WalletTransaction.findById(req.params.id)
+    .populate('store', 'name code')
+    .populate('customer', 'name phone')
+    .populate('performedBy', 'name email')
+    .lean();
+  if (!txn) throw ApiError.notFound('Receipt not found');
+  if (req.user.role === 'CUSTOMER') {
+    const own = String(req.user.customer?._id || req.user.customer || '');
+    if (String(txn.customer?._id) !== own) throw ApiError.forbidden('Insufficient permissions');
+  }
+  if (txn.type === 'DEBIT') {
+    const { serializeReceipt } = await import('./redemption.controller.js');
+    const ref = txn.metadata?.redemptionReference;
+    const redemption = ref
+      ? await VoucherRedemption.findOne({ redemptionReference: ref })
+        .populate('store', 'name code')
+        .populate('cashier', 'name email')
+        .populate('customer', 'name phone')
+        .populate('voucher', 'code type')
+        .lean()
+      : await VoucherRedemption.findOne({ idempotencyKey: txn.idempotencyKey })
+        .populate('store', 'name code')
+        .populate('cashier', 'name email')
+        .populate('customer', 'name phone')
+        .populate('voucher', 'code type')
+        .lean();
+    if (!redemption) throw ApiError.notFound('Linked redemption not found');
+    return res.json({ receipt: serializeReceipt(redemption) });
+  }
+  res.json({
+    receipt: {
+      kind: 'TOP_UP',
+      id: String(txn._id),
+      reference: txn.paymentReference ?? null,
+      date: txn.createdAt,
+      store: txn.store ? { name: txn.store.name, code: txn.store.code } : null,
+      cashier: txn.performedBy ? { name: txn.performedBy.name, email: txn.performedBy.email } : null,
+      customer: txn.customer ? { name: txn.customer.name, phone: txn.customer.phone ?? null } : null,
+      code: null,
+      posTransactionReference: null,
+      lines: [{ label: `Wallet top-up (${txn.method})`, amount: txn.amount }],
+      total: txn.amount,
+      previousBalance: txn.previousBalance,
+      newBalance: txn.newBalance,
+      pointsUsed: null,
+      pointsDiscount: null,
+      hasProof: !!txn.proof?.filename,
+      proofId: txn.proof?.filename ? String(txn._id) : null,
+    },
+  });
 });
 
 // --- Top-up approvals (maker-checker, ADMIN only) ---

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api.js';
+import ReceiptModal from '../components/ReceiptModal.jsx';
 import { formatMWK } from '../utils/format.js';
 
 export default function CashierHistory() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [receiptId, setReceiptId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +36,7 @@ export default function CashierHistory() {
         <div className="card"><p className="muted">No redemptions yet.</p></div>
       )}
       {!loading && !error && items.map((r) => (
-        <div className="card history-item" key={r.id}>
+        <div className="card history-item clickable" key={r.id} onClick={() => setReceiptId(r.id)} title="Open receipt">
           <strong>{formatMWK(r.amountRedeemed)}</strong> · {r.voucherCode}
           <div className="muted small">
             {r.redemptionReference} · {r.store?.name ?? ''} · {r.posTransactionReference} ·{' '}
@@ -42,6 +44,9 @@ export default function CashierHistory() {
           </div>
         </div>
       ))}
+      {receiptId && (
+        <ReceiptModal url={`/redemptions/${receiptId}/receipt`} title="Till Receipt" onClose={() => setReceiptId(null)} />
+      )}
       <p style={{ textAlign: 'center' }}><Link to="/cashier">Back</Link></p>
     </div>
   );

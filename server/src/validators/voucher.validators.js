@@ -47,6 +47,10 @@ export const redeemVoucherValidators = [
   // Verification accepts 4–6 digits (legacy 6-digit PINs still authorise).
   body('pin').optional().trim().matches(/^\d{4,6}$/).withMessage('Payment PIN must be 4 to 6 digits'),
   body('loyaltyPoints').optional().isInt({ min: 0 }).withMessage('Loyalty points must be a whole number'),
+  body('billTotal').optional().isFloat({ min: 0.01 }).withMessage('Bill total must be at least 0.01'),
+  body('tenderMethod').optional().isIn(['CASH', 'VISA']).withMessage('Tender method must be CASH or VISA'),
+  body('tenderAmount').optional().isFloat({ min: 0 }).withMessage('Tender amount cannot be negative'),
+  body('tenderReference').optional().trim().isLength({ max: 120 }).withMessage('Tender reference too long'),
 ];
 
 export const listVoucherValidators = [

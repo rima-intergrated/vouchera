@@ -37,6 +37,11 @@ export default function CashierVoucher() {
   const [pin, setPin] = useState('');
   const [usePoints, setUsePoints] = useState(false);
   const [points, setPoints] = useState('');
+  // Split tender: part of the bill paid outside stored value (till cash/VISA).
+  const [splitPay, setSplitPay] = useState(false);
+  const [bill, setBill] = useState('');
+  const [tenderMethod, setTenderMethod] = useState('CASH');
+  const [tenderRef, setTenderRef] = useState('');
 
   // The till store comes from the cashier's account, not from typing:
   // assigned cashiers are locked to their store; unassigned ones pick it.
@@ -134,6 +139,22 @@ export default function CashierVoucher() {
         return;
       }
     }
+    if (splitPay) {
+      const billNum = Number(bill);
+      if (!Number.isFinite(billNum) || billNum <= 0) {
+        setError('Enter the full bill total.');
+        return;
+      }
+      const ptsValue = usePoints && points ? Math.min(Math.floor(Number(points)) * (result?.loyalty?.mwkPerPoint ?? 0), value) : 0;
+      if (billNum + 0.005 < value - ptsValue) {
+        setError(`Bill total must cover the stored-value amount (${formatMWK(value - ptsValue)}).`);
+        return;
+      }
+      if (tenderMethod === 'VISA' && !tenderRef.trim()) {
+        setError('Enter the VISA auth code from the card terminal.');
+        return;
+      }
+    }
     setConfirming(true);
   };
 
@@ -150,6 +171,11 @@ export default function CashierVoucher() {
         idempotencyKey: crypto.randomUUID(),
         ...(result?.requiresPin ? { pin } : {}),
         ...(usePoints && points ? { loyaltyPoints: Math.floor(Number(points)) } : {}),
+        ...(splitPay ? {
+          billTotal: Number(bill),
+          tenderMethod,
+          ...(tenderRef.trim() ? { tenderReference: tenderRef.trim() } : {}),
+        } : {}),
       };
       const { data: raw } = wallet
         ? await api.post('/wallets/debit', { ...payload, walletCode: code })
@@ -199,6 +225,12 @@ export default function CashierVoucher() {
           <h1 className="success-title">{src === 'LOYALTY' ? '✓ PAID WITH POINTS' : wallet ? '✓ WALLET DEBITED' : '✓ VOUCHER REDEEMED'}</h1>
           <dl className="cashier-details">
             <div><dt>Amount</dt><dd>{formatMWK(success.redemption.amountRedeemed)}</dd></div>
+            {success.redemption.tenderMethod && success.redemption.tenderMethod !== 'NONE' && (
+              <>
+                <div><dt>Bill Total</dt><dd>{formatMWK(success.redemption.billTotal)}</dd></div>
+                <div><dt>{success.redemption.tenderMethod} Tender</dt><dd>{formatMWK(success.redemption.tenderAmount)}{success.redemption.tenderReference ? ` · ${success.redemption.tenderReference}` : ''}</dd></div>
+              </>
+            )}
             {success.loyalty && (
               <div><dt>Points Used</dt><dd>{success.loyalty.points} pts (−{formatMWK(success.loyalty.discount)})</dd></div>
             )}
@@ -242,9 +274,9 @@ export default function CashierVoucher() {
   const pointsValue = (pts) => (loyaltyInfo ? (Math.floor(Number(pts) || 0) * loyaltyInfo.mwkPerPoint) : 0);
   const activePoints = usePoints ? Math.min(Math.floor(Number(points) || 0), loyaltyInfo?.points ?? 0) : 0;
   const activeDiscount = Math.min(pointsValue(activePoints), confirmAmount);
-  const afterBalance = wallet
-    ? Math.max(0, v.remainingBalance - (confirmAmount - activeDiscount))
-    : Math.max(0, v.remainingBalance - (confirmAmount - activeDiscount));
+  const storedPreview = Math.max(0, confirmAmount - activeDiscount);
+  const billNum = Number(bill) || 0;
+  const tenderPreview = splitPay ? Math.max(0, billNum - storedPreview) : 0;
 
   return (
     <div className="cashier-wrap">
@@ -273,8 +305,11 @@ export default function CashierVoucher() {
           <p>You are about to redeem:</p>
           <p className="confirm-amount">{formatMWK(confirmAmount)}</p>
           {activeDiscount > 0 && <p className="muted small">Points discount: −{formatMWK(activeDiscount)} ({activePoints} pts)</p>}
+          {splitPay && (
+            <p className="muted small">Bill total {formatMWK(billNum)} · {tenderMethod} tender {formatMWK(tenderPreview)}{tenderMethod === 'VISA' ? ` · auth ${tenderRef.trim()}` : ''}</p>
+          )}
           <p>{wallet ? 'Wallet balance after debit:' : 'Voucher remaining after redemption:'}</p>
-          <p className="confirm-amount">{formatMWK(afterBalance)}</p>
+          <p className="confirm-amount">{formatMWK(Math.max(0, v.remainingBalance - storedPreview))}</p>
           <p className="muted small">POS: {posRef.trim()} · {displayStore}</p>
           {error && <p className="error">{error}</p>}
           <div className="confirm-actions">
@@ -321,6 +356,30 @@ export default function CashierVoucher() {
               <p className="muted small">Customer enters their PIN on this device to authorise.</p>
             </div>
           )}
+          <div className="field">
+            <label htmlFor="splitpay" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input id="splitpay" type="checkbox" checked={splitPay} onChange={(e) => setSplitPay(e.target.checked)} />
+              Split payment — rest paid by Cash / VISA
+            </label>
+            {splitPay && (
+              <>
+                <input id="bill" className="input cashier-input" type="number" min="0.01" step="0.01" required
+                  placeholder="Full bill total K____________" value={bill} onChange={(e) => setBill(e.target.value)} style={{ marginTop: 8 }} />
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <select className="select cashier-input" value={tenderMethod} onChange={(e) => setTenderMethod(e.target.value)} style={{ flex: 1 }}>
+                    <option value="CASH">Cash</option>
+                    <option value="VISA">VISA</option>
+                  </select>
+                  <input id="tenderref" className="input cashier-input" autoComplete="off" style={{ flex: 2 }}
+                    placeholder={tenderMethod === 'VISA' ? 'VISA auth code (required)' : 'Tender note (optional)'}
+                    value={tenderRef} onChange={(e) => setTenderRef(e.target.value)} />
+                </div>
+                {!!tenderPreview && (
+                  <p className="muted small">{tenderMethod} collects {formatMWK(tenderPreview)} outside stored value.</p>
+                )}
+              </>
+            )}
+          </div>
           <div className="field">
             <label htmlFor="store">Store</label>
             {hasAssignedStore ? (

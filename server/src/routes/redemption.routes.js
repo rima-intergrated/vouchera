@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { param, query } from 'express-validator';
 import { myRedemptions } from '../controllers/cashier.controller.js';
-import { listRedemptions, voucherRedemptions } from '../controllers/redemption.controller.js';
+import { listRedemptions, voucherRedemptions, redemptionReceipt } from '../controllers/redemption.controller.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/authorize.js';
 import { validate } from '../middleware/validate.js';
@@ -12,6 +12,16 @@ const STATUS_VALUES = ['DRAFT', 'ACTIVE', 'PARTIALLY_REDEEMED', 'FULLY_REDEEMED'
 
 // Own redemption history for cashiers; staff with read access may pass ?cashier=.
 router.get('/mine', requireAuth, myRedemptions);
+
+// Single-receipt view (controller enforces role scoping). Literal-safe:
+// ':id/receipt' cannot collide with '/voucher/:voucherId'.
+router.get(
+  '/:id/receipt',
+  requireAuth,
+  [param('id').isMongoId().withMessage('Invalid redemption id')],
+  validate,
+  redemptionReceipt
+);
 
 // Complete scoped history: all roles authenticated; controller enforces
 // ADMIN/AUDITOR = all, MANAGER = own store, CASHIER = own records.

@@ -4,7 +4,7 @@ import VoucherRedemption from '../models/VoucherRedemption.js';
 import WalletTransaction from '../models/WalletTransaction.js';
 import Store from '../models/Store.js';
 import { ApiError } from '../utils/ApiError.js';
-import { generateRedemptionReference, round2 } from '../utils/helpers.js';
+import { generateRedemptionReference, round2, parseExternalTender } from '../utils/helpers.js';
 import { verifyCustomerPin } from './pin.service.js';
 import { getLoyaltyConfig, cashValueForPoints, earnForSpend } from './loyalty.service.js';
 
@@ -137,7 +137,7 @@ export async function reloadGiftCard({ voucherId, amount, method, paymentReferen
 // Optional loyalty tender: `loyaltyPoints` consumes points for a MWK
 // discount first (one PIN authorises both legs); the wallet is charged the
 // remainder. Points are earned on the cash-paid portion only.
-export async function debitWallet({ walletCode = null, customerId = null, amount, posTransactionReference, storeId, actor = null, idempotencyKey = undefined, device = {}, pin = undefined, loyaltyPoints = 0 }) {
+export async function debitWallet({ walletCode = null, customerId = null, amount, posTransactionReference, storeId, actor = null, idempotencyKey = undefined, device = {}, pin = undefined, loyaltyPoints = 0, tender = {} }) {
   const value = round2(amount);
   if (!Number.isFinite(value) || value < 0.01) throw ApiError.badRequest('Amount must be at least 0.01');
   const posRef = String(posTransactionReference || '').trim();
@@ -201,8 +201,13 @@ export async function debitWallet({ walletCode = null, customerId = null, amount
     }
   }
 
+  // External tender validates against the wallet leg BEFORE anything moves:
+  // stored + external must equal the bill to the tambala.
+  const tenderSplit = parseExternalTender(tender, walletCharge);
+
   // Full-points payment: no wallet leg at all.
   if (walletCharge < 0.01 && pointsToUse > 0) {
+    const tenderSplit = parseExternalTender(tender, pointsDiscount);
     const { redeemPoints } = await import('./loyalty.service.js');
     const { txn: loyaltyTxn } = await redeemPoints({
       customer,
@@ -227,6 +232,10 @@ export async function debitWallet({ walletCode = null, customerId = null, amount
           posTransactionReference: posRef,
           redemptionReference: generateRedemptionReference('LP'),
           metadata: { ...device, pointsUsed: pointsToUse, billTotal: value },
+          billTotal: tenderSplit.billTotal,
+          tenderMethod: tenderSplit.tenderMethod,
+          tenderAmount: tenderSplit.tenderAmount,
+          tenderReference: tenderSplit.tenderReference,
           ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:loyalty-red` } : {}),
         });
       } catch (err) {
@@ -280,6 +289,10 @@ export async function debitWallet({ walletCode = null, customerId = null, amount
           ...device,
           ...(pointsToUse ? { billTotal: value, pointsUsed: pointsToUse, pointsDiscount } : {}),
         },
+        billTotal: tenderSplit.billTotal,
+        tenderMethod: tenderSplit.tenderMethod,
+        tenderAmount: tenderSplit.tenderAmount,
+        tenderReference: tenderSplit.tenderReference,
         ...(idempotencyKey ? { idempotencyKey } : {}),
       });
     } catch (err) {

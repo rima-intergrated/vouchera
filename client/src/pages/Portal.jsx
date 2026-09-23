@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api.js';
+import ReceiptModal from '../components/ReceiptModal.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { formatMWK } from '../utils/format.js';
 
@@ -16,6 +17,7 @@ export default function Portal() {
   const [loyaltyTxns, setLoyaltyTxns] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [receiptId, setReceiptId] = useState(null);
 
   useEffect(() => {
     if (tab !== 'vouchers' || vouchers) return;
@@ -116,12 +118,15 @@ export default function Portal() {
           <p className="muted">No transactions yet. Top up at any till to get started.</p>
         ) : (
           ledger.items.map((t) => (
-            <div className="history-item" key={t.id}>
+            <div className="history-item clickable" key={t.id} onClick={() => setReceiptId(t.id)} title="Open receipt">
               <strong>{t.type === 'TOP_UP' ? '+' : '−'}{formatMWK(t.amount)}</strong>{' '}
               <span className="muted small">{t.type === 'TOP_UP' ? `Top-up (${t.method})` : 'Purchase'}</span>
               <div className="muted small">{new Date(t.createdAt).toLocaleString('en-GB')} · Balance {formatMWK(t.newBalance)}</div>
             </div>
           ))
+        )}
+        {receiptId && (
+          <ReceiptModal url={`/wallets/transactions/${receiptId}/receipt`} title="Receipt" onClose={() => setReceiptId(null)} />
         )}
         <p style={{ textAlign: 'center' }}><Link to="/portal/history">View full history</Link></p>
       </div>

@@ -8,6 +8,7 @@ const NAV = [
   { to: '/campaigns', label: 'Campaigns' },
   { to: '/customers', label: 'Customers' },
   { to: '/approvals', label: 'Approvals', roles: ['ADMIN'] },
+  { to: '/shifts', label: 'Shifts' },
   { to: '/security', label: 'Security', roles: ['ADMIN', 'MANAGER'] },
   { to: '/stores', label: 'Stores' },
   { to: '/users', label: 'Users', roles: ['ADMIN'] },

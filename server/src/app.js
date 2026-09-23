@@ -14,6 +14,7 @@ import campaignRoutes from './routes/campaign.routes.js';
 import auditRoutes from './routes/audit.routes.js';
 import walletRoutes from './routes/wallet.routes.js';
 import loyaltyRoutes from './routes/loyalty.routes.js';
+import shiftRoutes from './routes/shift.routes.js';
 import settingsRoutes from './routes/settings.routes.js';
 import onlineRoutes from './routes/online.routes.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
@@ -82,6 +83,7 @@ app.use('/api/campaigns', campaignRoutes);
 app.use('/api/audit-logs', auditRoutes);
 app.use('/api/wallets', walletRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
+app.use('/api/shifts', shiftRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/online', onlineRoutes);
 
