@@ -21,7 +21,11 @@ const TABS = [
   { id: 'sales', label: 'Sales Ledger' },
 ];
 
-const NO_DATES = new Set(['liability', 'anomalies']);
+const NO_DATES = new Set(['liability', 'anomalies', 'sales']);
+
+// Tabs that render their own filter controls — the generic bar stays hidden
+// there so two date pickers never stack (sales + anomalies).
+const OWN_FILTERS = new Set(['anomalies', 'sales']);
 
 function DataTable({ columns, rows, emptyText }) {
   if (!rows?.length) return <p className="muted">{emptyText ?? 'No data in the selected period.'}</p>;
@@ -123,6 +127,7 @@ export default function Reports() {
         ))}
       </div>
 
+      {!OWN_FILTERS.has(tab) && (
       <form className="card filters-bar" onSubmit={apply}>
         {showDates && (
           <>
@@ -144,6 +149,7 @@ export default function Reports() {
         )}
         <button className="btn" type="submit">Apply</button>
       </form>
+      )}
 
       {tab === 'redemption' && <RedemptionTab applied={applied} />}
       {tab === 'issuance' && (
