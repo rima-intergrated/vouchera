@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAnalytics, useRedemptions, downloadCsv } from '../hooks/useReports.js';
 import { useLookup } from '../hooks/useVouchers.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import ReceiptModal from '../components/ReceiptModal.jsx';
 import api from '../services/api.js';
 import { formatMWK } from '../utils/format.js';
 
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'monthly', label: 'Monthly' },
   { id: 'reconciliation', label: 'Reconciliation' },
   { id: 'anomalies', label: 'Anomalies' },
+  { id: 'sales', label: 'Sales Ledger' },
 ];
 
 const NO_DATES = new Set(['liability', 'anomalies']);
@@ -302,7 +304,137 @@ export default function Reports() {
         </AnalyticsTab>
       )}
       {tab === 'anomalies' && <AnomaliesTab />}
+      {tab === 'sales' && <SalesTab stores={stores} user={user} />}
     </div>
+  );
+}
+
+// Sales ledger: every sale with bill, stored-value leg and outside-money
+// legs. Derived from redemptions — it cannot drift. Rows open receipts.
+function SalesTab({ stores, user }) {
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [store, setStore] = useState('');
+  const [tender, setTender] = useState('');
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [receiptId, setReceiptId] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const q = new URLSearchParams({ page, limit: 20 });
+      if (from) q.set('from', from);
+      if (to) q.set('to', to);
+      if (store) q.set('store', store);
+      if (tender) q.set('tender', tender);
+      const { data } = await api.get(`/reports/sales-ledger?${q}`);
+      setData(data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load sales ledger');
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to, store, tender, page]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const onExport = async () => {
+    setExporting(true);
+    try {
+      await downloadCsv('sales-ledger', { from, to, store, tender }, 'sales-ledger.csv');
+    } catch {
+      // eslint-disable-next-line no-alert
+      alert('CSV export failed. Try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <>
+      <form className="card filters-bar" onSubmit={(e) => { e.preventDefault(); setPage(1); load(); }}>
+        <input type="date" className="input" value={from} onChange={(e) => setFrom(e.target.value)} title="From" />
+        <input type="date" className="input" value={to} onChange={(e) => setTo(e.target.value)} title="To" />
+        {user?.role !== 'MANAGER' && (
+          <select className="select" value={store} onChange={(e) => setStore(e.target.value)}>
+            <option value="">All stores</option>
+            {stores.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
+          </select>
+        )}
+        <select className="select" value={tender} onChange={(e) => setTender(e.target.value)}>
+          <option value="">All tenders</option>
+          <option value="NONE">Stored value only</option>
+          <option value="CASH">Cash tender</option>
+          <option value="VISA">VISA tender</option>
+        </select>
+        <button className="btn" type="submit">Apply</button>
+      </form>
+      {loading && <div className="card"><p className="muted">Loading sales…</p></div>}
+      {!loading && error && (
+        <div className="card error-state">
+          <p className="error">{error}</p>
+          <button className="btn" onClick={load}>Retry</button>
+        </div>
+      )}
+      {!loading && !error && data && (
+        <>
+          <Totals items={[
+            { label: 'Sales', value: data.totals.count },
+            { label: 'Bills Total', value: formatMWK(data.totals.bills) },
+            { label: 'Stored Value', value: formatMWK(data.totals.stored) },
+            { label: 'Cash Tender', value: formatMWK(data.totals.cash) },
+            { label: 'VISA Tender', value: formatMWK(data.totals.visa) },
+          ]} />
+          {!data.balanced && (
+            <div className="card error-state">
+              <p className="error">Bills ≠ stored + cash + VISA — some rows lack bill totals (recorded before tender capture) or a split was mis-keyed.</p>
+            </div>
+          )}
+          <div className="card">
+            <h2>Sales</h2>
+            {data.items.length === 0 ? (
+              <p className="muted">No sales in the selected period.</p>
+            ) : (
+              <table className="table">
+                <thead><tr><th>Date</th><th>POS Ref</th><th>Cashier</th><th>Bill</th><th>Stored</th><th>Cash</th><th>VISA</th><th>Customer</th></tr></thead>
+                <tbody>
+                  {data.items.map((r) => (
+                    <tr key={r.id} className="clickable-row" onClick={() => setReceiptId(r.id)} title="Open receipt" style={{ cursor: 'pointer' }}>
+                      <td>{new Date(r.date).toLocaleString('en-GB')}</td>
+                      <td>{r.posRef}</td>
+                      <td>{r.cashier?.name ?? '—'}</td>
+                      <td>{r.bill != null ? formatMWK(r.bill) : '—'}</td>
+                      <td>{formatMWK(r.stored)}</td>
+                      <td>{r.cash ? formatMWK(r.cash) : '—'}</td>
+                      <td>{r.visa ? `${formatMWK(r.visa)}${r.visaAuth ? ` · ${r.visaAuth}` : ''}` : '—'}</td>
+                      <td>{r.customer?.name ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <div className="pagination">
+              <button className="btn secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</button>
+              <span className="muted">Page {data.pagination.page} of {Math.max(1, data.pagination.pages)}</span>
+              <button className="btn secondary" disabled={page >= data.pagination.pages} onClick={() => setPage((p) => p + 1)}>Next</button>
+              <button className="btn secondary" disabled={exporting} onClick={onExport} style={{ marginLeft: 'auto' }}>
+                {exporting ? 'Exporting…' : 'Export CSV'}
+              </button>
+            </div>
+          </div>
+          {receiptId && (
+            <ReceiptModal url={`/redemptions/${receiptId}/receipt`} title="Sale Receipt" onClose={() => setReceiptId(null)} />
+          )}
+        </>
+      )}
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { query } from 'express-validator';
-import { getSummary, getRedemptions, topupAnomalies } from '../controllers/reports.controller.js';
+import { getSummary, getRedemptions, topupAnomalies, salesLedger } from '../controllers/reports.controller.js';
 import {
   issuanceReport,
   liabilityReport,
@@ -61,5 +61,19 @@ router.get('/campaigns', ...read, [...dateFilters, optFormat], validate, campaig
 router.get('/daily', ...read, [...dateFilters, optFormat], validate, dailyReport);
 router.get('/monthly', ...read, [...dateFilters, optFormat], validate, monthlyReport);
 router.get('/reconciliation', ...read, [optFormat], validate, reconciliationReport);
+router.get(
+  '/sales-ledger',
+  ...read,
+  [
+    ...dateFilters,
+    optId('store'),
+    optId('cashier'),
+    query('tender').optional().isIn(['NONE', 'CASH', 'VISA']).withMessage('tender must be NONE, CASH or VISA'),
+    optFormat,
+    ...paging,
+  ],
+  validate,
+  salesLedger
+);
 
 export default router;
