@@ -86,7 +86,7 @@ export default function Cashier() {
                 placeholder="K____________" value={declared} onChange={(e) => setDeclared(e.target.value)} />
             </div>
             {shiftMsg.text && <p className={shiftMsg.kind === 'error' ? 'error' : 'muted'}>{shiftMsg.text}</p>}
-            <button className="btn" type="submit" disabled={shiftBusy} style={{ width: '100%' }}>
+            <button className="btn success" type="submit" disabled={shiftBusy} style={{ width: '100%' }}>
               {shiftBusy ? 'Closing…' : 'Close Shift'}
             </button>
           </form>
@@ -94,7 +94,7 @@ export default function Cashier() {
           <>
             <p className="muted small">No open shift. Open one to start selling — closing compares counted cash to the ledger.</p>
             {shiftMsg.text && <p className={shiftMsg.kind === 'error' ? 'error' : 'muted'}>{shiftMsg.text}</p>}
-            <button className="btn" onClick={openShift} disabled={shiftBusy} style={{ width: '100%' }}>
+            <button className="btn secondary" onClick={openShift} disabled={shiftBusy} style={{ width: '100%' }}>
               {shiftBusy ? 'Opening…' : 'Open Shift'}
             </button>
           </>
